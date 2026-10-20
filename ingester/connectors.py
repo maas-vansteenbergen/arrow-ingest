@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from typing import Any, Iterator, Mapping
@@ -20,6 +21,12 @@ ARROW_TYPES = {
 ROWS_PER_BATCH = 1_000
 
 
+@dataclass(frozen=True)
+class _RequestConfiguration:
+    url: str
+    headers: Mapping[str, str]
+
+
 class RestConnector:
     """Fetch a JSON collection from a configured REST endpoint."""
 
@@ -27,92 +34,107 @@ class RestConnector:
         self._connector = connector
 
     def read(self) -> pa.RecordBatchReader:
-        headers = _request_headers(
-            self._connector.get("headers"),
-            self._connector.get("auth"),
-        )
-        url = _with_query_parameters(
-            self._connector["url"],
-            _static_query_parameters(self._connector.get("params")),
-        )
-        schema = pa.schema(
-            [
-                pa.field(name, _arrow_type(type_name))
-                for name, type_name in self._connector["schema"].items()
-            ]
-        )
+        request = _request_configuration(self._connector)
+        schema = _schema(self._connector["schema"])
+        records_path = self._connector["records_path"]
         pagination = self._connector.get("pagination")
         if pagination is None:
-            payload = self._fetch_payload(url, headers)
-            batches = self._record_batches(self._records(payload), schema)
+            payload = _fetch_payload(request)
+            batches = _record_batches(_records(payload, records_path), schema)
         else:
             offset_param, limit_param, page_size, total_path = _offset_pagination(pagination)
-            batches = self._offset_batches(
+            batches = _offset_batches(
                 schema,
-                url=url,
+                request,
+                records_path,
                 offset_param=offset_param,
                 limit_param=limit_param,
                 page_size=page_size,
                 total_path=total_path,
-                headers=headers,
             )
         return pa.RecordBatchReader.from_batches(schema, batches)
 
-    def _fetch_payload(self, url: str, headers: Mapping[str, str]) -> dict[str, Any]:
-        request = Request(url, headers=headers)
-        with urlopen(request) as response:  # noqa: S310 - the connector URL is explicit user config.
-            return json.load(response)
 
-    def _records(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        records = _get_path(payload, self._connector["records_path"])
-        if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
-            raise ValueError("connector.records_path must resolve to a list of JSON objects.")
-        return records
+def _request_configuration(connector: Mapping[str, Any]) -> _RequestConfiguration:
+    return _RequestConfiguration(
+        url=_with_query_parameters(
+            connector["url"],
+            _static_query_parameters(connector.get("params")),
+        ),
+        headers=_request_headers(
+            connector.get("headers"),
+            connector.get("auth"),
+        ),
+    )
 
-    def _record_batches(
-        self,
-        records: list[dict[str, Any]],
-        schema: pa.Schema,
-    ) -> Iterator[pa.RecordBatch]:
-        yield from (
-            pa.RecordBatch.from_pylist(records[start : start + ROWS_PER_BATCH], schema=schema)
-            for start in range(0, len(records), ROWS_PER_BATCH)
-        )
 
-    def _offset_batches(
-        self,
-        schema: pa.Schema,
-        *,
-        url: str,
-        offset_param: str,
-        limit_param: str,
-        page_size: int,
-        total_path: str,
-        headers: Mapping[str, str],
-    ) -> Iterator[pa.RecordBatch]:
-        offset = 0
-        while True:
-            payload = self._fetch_payload(
-                _with_query_parameters(
-                    url,
+def _schema(schema: Mapping[str, str]) -> pa.Schema:
+    return pa.schema(
+        [
+            pa.field(name, _arrow_type(type_name))
+            for name, type_name in schema.items()
+        ]
+    )
+
+
+def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, Any]:
+    request = Request(request_configuration.url, headers=request_configuration.headers)
+    with urlopen(request) as response:  # noqa: S310 - the connector URL is explicit user config.
+        return json.load(response)
+
+
+def _records(payload: dict[str, Any], records_path: str) -> list[dict[str, Any]]:
+    records = _get_path(payload, records_path)
+    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
+        raise ValueError("connector.records_path must resolve to a list of JSON objects.")
+    return records
+
+
+def _record_batches(
+    records: list[dict[str, Any]],
+    schema: pa.Schema,
+) -> Iterator[pa.RecordBatch]:
+    yield from (
+        pa.RecordBatch.from_pylist(records[start : start + ROWS_PER_BATCH], schema=schema)
+        for start in range(0, len(records), ROWS_PER_BATCH)
+    )
+
+
+def _offset_batches(
+    schema: pa.Schema,
+    request: _RequestConfiguration,
+    records_path: str,
+    *,
+    offset_param: str,
+    limit_param: str,
+    page_size: int,
+    total_path: str,
+) -> Iterator[pa.RecordBatch]:
+    offset = 0
+    while True:
+        payload = _fetch_payload(
+            _RequestConfiguration(
+                url=_with_query_parameters(
+                    request.url,
                     {offset_param: offset, limit_param: page_size},
                 ),
-                headers,
+                headers=request.headers,
             )
-            total = _get_path(payload, total_path)
-            if not isinstance(total, int) or isinstance(total, bool) or total < 0:
-                raise ValueError("connector.pagination.total_path must resolve to a non-negative integer.")
-            if offset >= total:
-                return
+        )
+        total = _get_path(payload, total_path)
+        if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+            raise ValueError("connector.pagination.total_path must resolve to a non-negative integer.")
+        if offset >= total:
+            return
 
-            records = self._records(payload)
-            if not records:
-                raise ValueError("connector pagination returned no records before reaching the total.")
+        records = _records(payload, records_path)
+        if not records:
+            raise ValueError("connector pagination returned no records before reaching the total.")
 
-            yield from self._record_batches(records, schema)
-            offset += len(records)
-            if offset >= total:
-                return
+        yield from _record_batches(records, schema)
+        offset += len(records)
+        if offset >= total:
+            return
 
 
 def _arrow_type(type_name: str) -> pa.DataType:
