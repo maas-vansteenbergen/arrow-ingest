@@ -1,0 +1,14 @@
+connector:
+  url: https://dummyjson.com/products?limit=10
+  records_path: products
+  schema:
+    id: int64
+    title: string
+    price: float64
+    category: string
+    stock: int64
+
+merge: replace
+
+target:
+  path: ./output/products.parquet

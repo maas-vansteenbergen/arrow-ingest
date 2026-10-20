@@ -1,0 +1,79 @@
+Design Goals
+
+1. Arrow is the only data contract
+   - Connectors emit Arrow.
+   - Targets consume Arrow.
+   - No framework-specific data structures.
+   - Minimize conversions and copies.
+
+2. Connector-first model
+   - A connector represents a single external system.
+   - Running a connector produces an Arrow stream/table.
+   - No source/resource distinction.
+
+Initial supported connector categories
+   - Parquet files.
+   - Flat files, including CSV and JSON Lines.
+   - Databases with ADBC support.
+   - HTTP APIs.
+   - Object storage is a location for file connectors, not a separate connector
+     category.
+   - Out of scope initially: message queues/streams, CDC and replication
+     protocols, spreadsheets, and SDK-only integrations.
+
+3. Declarative by default
+   - Authentication, pagination, incremental loading, rate limits and schema handling should be configurable.
+   - Common ingestion patterns should not require custom Python.
+
+4. Python as an escape hatch
+   - Custom code is only for genuinely unusual APIs.
+   - If common REST APIs require Python, the abstraction is incomplete.
+
+5. Minimal state
+   - Derive state from the destination whenever possible.
+   - Store only irreducible protocol state (e.g. opaque cursors, delta tokens).
+   - Avoid separate state stores where destination metadata is sufficient.
+
+6. Arrow-native targets only
+   - Support targets with a strong Arrow story.
+   - Examples: Parquet, DuckDB, Iceberg, Delta, Postgres via ADBC, Snowflake via ADBC.
+   - Reducing scope is a feature.
+
+7. Loaders built around ADBC
+   - Prefer standardized Arrow ingestion paths.
+   - Avoid destination-specific loading implementations where possible.
+
+8. Polars as implementation, not abstraction
+   - Use Polars internally for schema normalization, casting and transformations.
+   - Keep Arrow as the public contract.
+
+9. Orchestration is out of scope
+   - Integrates with Prefect, Dagster, Airflow, Temporal, etc.
+   - The framework is for ingestion, not workflow management.
+
+10. Merge strategies as a first-class concept
+    - append
+    - replace
+    - upsert
+    - scd2
+    - Only retain state required to implement these strategies.
+
+11. Relentlessly small abstraction surface
+    Core concepts:
+      - Connector
+      - Cursor
+      - Arrow Stream
+      - Target
+      - Merge Strategy
+
+    Explicitly avoid:
+      - Source
+      - Resource
+      - Pipeline
+      - Asset
+      - Dataset
+      - Block
+      - Flow
+
+Vision:
+Describe ingestion, don't implement plumbing.

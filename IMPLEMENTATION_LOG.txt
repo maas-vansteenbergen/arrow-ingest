@@ -1,0 +1,165 @@
+Implementation log
+==================
+
+Completed
+---------
+- Added a Connector protocol with read() returning pyarrow.RecordBatchReader.
+- Added RestConnector, which owns the configured HTTP request, JSON record
+  selection, Arrow schema creation, and conversion to an Arrow stream.
+- Changed main() to construct RestConnector and consume its Arrow stream only
+  at the existing Parquet-writing boundary.
+- Preserved the existing connector.yaml configuration and output target.
+
+Out of scope
+------------
+- Pagination, authentication configuration, retries, rate limits, and state.
+- Target abstractions, ADBC, Polars, and merge strategies.
+- Registries, pipelines, sources, resources, and orchestration.
+
+Validation
+----------
+- RestConnector produced an Arrow stream that read back as 10 rows with:
+  id, title, price, category, stock.
+- Writing that stream's table to a temporary Parquet file and reading it back
+  succeeded.
+- `python demo.py connector.yaml` reached its Parquet write but could not
+  replace output/products.parquet because that pre-existing file is not
+  writable in this environment. No source or configuration change was made to
+  work around that filesystem permission issue.
+
+Target implementation completed
+-------------------------------
+- Added a Target protocol whose load() accepts pyarrow.RecordBatchReader.
+- Added ParquetTarget, which owns directory creation and Parquet output.
+- Changed main() to connect RestConnector.read() directly to ParquetTarget.load().
+- Kept connector.yaml unchanged; merge strategies remain out of scope.
+
+Target validation
+-----------------
+- A temporary ParquetTarget consumed RestConnector's Arrow stream and wrote
+  10 rows.
+- Reading that Parquet output confirmed the configured columns: id, title,
+  price, category, stock.
+
+Connector terminology implementation completed
+----------------------------------------------
+- Renamed the YAML section from `source` to `connector`.
+- Renamed the RestConnector configuration parameter and internal field.
+- Renamed the configuration error to `connector.records_path`.
+- Did not add a legacy `source` alias or alter ingestion behavior.
+
+Connector terminology validation
+--------------------------------
+- The renamed `connector` configuration drove RestConnector through
+  ParquetTarget to a temporary file.
+- The output contained 10 rows and the configured columns: id, title, price,
+  category, stock.
+
+Abstraction surface check
+-------------------------
+- Public concepts introduced: Connector, Target, and the Arrow
+  RecordBatchReader contract.
+- Concrete implementations introduced: RestConnector and ParquetTarget.
+- No source/resource/pipeline/asset/dataset/block/flow abstraction exists.
+- The `connector` and `target` YAML sections are configuration, not runtime
+  framework concepts.
+- `load()` returning an integer is operational metadata, not a framework data
+  model. No non-Arrow data crosses from Connector to Target.
+
+Replace merge strategy implementation completed
+------------------------------------------------
+- Added `merge: replace` to connector.yaml.
+- Added MergeStrategy with the single supported value: `replace`.
+- Changed Target.load() and ParquetTarget.load() to receive the strategy.
+- Made ParquetTarget reject any strategy other than `replace`.
+- Preserved the current overwrite behavior.
+
+Explicitly not implemented
+--------------------------
+- `append`, `upsert`, or `scd2`.
+- Primary keys, cursors, state, or destination metadata.
+- Additional targets, ADBC, pagination, authentication, rate limiting, or
+  schema-policy changes.
+
+Validation
+----------
+- `replace` wrote a temporary Parquet output with 10 rows and the configured
+  columns: id, title, price, category, stock.
+- The unsupported `append` strategy was rejected with:
+  `Unsupported merge strategy 'append'. Supported strategies: replace.`
+
+Arrow batch streaming implementation completed
+------------------------------------------------
+- RestConnector now constructs RecordBatch objects directly in fixed-size
+  internal batches rather than building a Table first.
+- ParquetTarget now writes each incoming batch through ParquetWriter and does
+  not call RecordBatchReader.read_all().
+- The public RecordBatchReader contract, schema, `replace` behavior,
+  configuration shape, and row-count output are unchanged.
+
+Still intentionally buffered
+----------------------------
+- This REST connector still loads its JSON response before forming Arrow
+  batches because it uses the standard JSON decoder.
+- Incremental HTTP/JSON decoding, configurable batch size, pagination, Polars,
+  ADBC, additional targets, and additional merge strategies remain out of
+  scope.
+
+Validation
+----------
+- The configured REST connector wrote 10 rows with the declared columns:
+  id, title, price, category, stock.
+- ParquetTarget consumed a two-batch Arrow reader and persisted all three
+  values in input order without materializing the stream as a Table.
+
+Design decision: initial connector scope
+----------------------------------------
+- Added initial supported connector categories to DESIGN_PLAN.txt: Parquet,
+  flat files, ADBC-capable databases, and HTTP APIs.
+- Recorded that object storage is a file location rather than a separate
+  connector category.
+- Explicitly excluded message queues/streams, CDC/replication protocols,
+  spreadsheets, and SDK-only integrations from the initial scope.
+- This bounds the project around connectors that can reasonably emit Arrow
+  batches without introducing a separate streaming or replication framework.
+
+Automated test baseline completed
+---------------------------------
+- Added pytest to the development requirements.
+- Added a network-free REST connector test for JSON record selection and
+  declared-schema conversion.
+- Added a multi-batch Parquet target test.
+- Added an unsupported merge-strategy error test.
+- `python -m pytest -q tests/test_demo.py` passed: 3 tests.
+
+Cleanup checkpoint
+------------------
+Perform a focused structural cleanup immediately after this test baseline and
+before adding pagination, authentication, state, or a second target.
+
+That cleanup should:
+- Move Connector, Target, MergeStrategy, and their implementations out of
+  demo.py into a small package/module layout.
+- Keep the public concepts unchanged and avoid registries, factories, or a
+  pipeline layer.
+- Leave demo.py as a thin CLI/configuration adapter.
+- Preserve the same focused tests throughout the move.
+
+Module cleanup completed
+------------------------
+- Moving the contracts and implementations into a small `ingester` package.
+- Reduced demo.py to YAML configuration and CLI wiring.
+- Kept the existing tests focused on implementation modules.
+- Added ingester.core for contracts and merge parsing, ingester.connectors for
+  RestConnector, and ingester.targets for ParquetTarget.
+- Did not add factories, registries, pipelines, or any new public concepts.
+- `python -m pytest -q tests/test_demo.py` passed: 3 tests.
+
+Final cleanup item
+------------------
+Renamed `tests/test_demo.py` to `tests/test_ingester.py`.
+
+The test name now matches the `ingester` package that it exercises directly,
+rather than the thin demo CLI. Structural cleanup is complete; further module
+splitting or package infrastructure would not provide enough value at the
+current project size.
