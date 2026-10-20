@@ -176,3 +176,16 @@ Offset pagination implementation completed
 - `python -m pytest -q tests/test_ingester.py` passed: 5 tests.
 - The configured demo fetched 194 products through offset pagination and wrote
   them to a temporary Parquet file with the declared five columns.
+
+Bearer authentication implementation completed
+------------------------------------------------
+- Adding the first declarative REST authentication mode: bearer tokens from a
+  named environment variable.
+- Preserving unauthenticated connector behavior when `auth` is absent.
+- Failing before an HTTP request when the configured environment variable is
+  missing or empty, without revealing the token.
+- Not adding basic authentication, OAuth, static headers, secret-manager
+  integration, retries, or rate limiting.
+- Verified the configured bearer header is sent for regular and every
+  paginated request.
+- `python -m pytest -q tests/test_ingester.py` passed: 7 tests.

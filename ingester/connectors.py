@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Iterator, Mapping
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -26,6 +27,7 @@ class RestConnector:
         self._connector = connector
 
     def read(self) -> pa.RecordBatchReader:
+        headers = _request_headers(self._connector.get("auth"))
         schema = pa.schema(
             [
                 pa.field(name, _arrow_type(type_name))
@@ -34,7 +36,7 @@ class RestConnector:
         )
         pagination = self._connector.get("pagination")
         if pagination is None:
-            payload = self._fetch_payload(self._connector["url"])
+            payload = self._fetch_payload(self._connector["url"], headers)
             batches = self._record_batches(self._records(payload), schema)
         else:
             offset_param, limit_param, page_size, total_path = _offset_pagination(pagination)
@@ -44,14 +46,12 @@ class RestConnector:
                 limit_param=limit_param,
                 page_size=page_size,
                 total_path=total_path,
+                headers=headers,
             )
         return pa.RecordBatchReader.from_batches(schema, batches)
 
-    def _fetch_payload(self, url: str) -> dict[str, Any]:
-        request = Request(
-            url,
-            headers={"User-Agent": "arrow-ingest-demo/0.1"},
-        )
+    def _fetch_payload(self, url: str, headers: Mapping[str, str]) -> dict[str, Any]:
+        request = Request(url, headers=headers)
         with urlopen(request) as response:  # noqa: S310 - the connector URL is explicit user config.
             return json.load(response)
 
@@ -79,6 +79,7 @@ class RestConnector:
         limit_param: str,
         page_size: int,
         total_path: str,
+        headers: Mapping[str, str],
     ) -> Iterator[pa.RecordBatch]:
         offset = 0
         while True:
@@ -86,7 +87,8 @@ class RestConnector:
                 _with_query_parameters(
                     self._connector["url"],
                     {offset_param: offset, limit_param: page_size},
-                )
+                ),
+                headers,
             )
             total = _get_path(payload, total_path)
             if not isinstance(total, int) or isinstance(total, bool) or total < 0:
@@ -139,6 +141,26 @@ def _offset_pagination(pagination: Any) -> tuple[str, str, int, str]:
     if not isinstance(page_size, int) or isinstance(page_size, bool) or page_size <= 0:
         raise ValueError("connector.pagination.page_size must be a positive integer.")
     return offset_param, limit_param, page_size, total_path
+
+
+def _request_headers(auth: Any) -> dict[str, str]:
+    headers = {"User-Agent": "arrow-ingest-demo/0.1"}
+    if auth is None:
+        return headers
+    if not isinstance(auth, Mapping):
+        raise ValueError("connector.auth must be a mapping.")
+    if auth.get("type") != "bearer":
+        raise ValueError("connector.auth.type must be 'bearer'.")
+
+    token_env = auth.get("token_env")
+    if not isinstance(token_env, str) or not token_env:
+        raise ValueError("connector.auth.token_env must be a non-empty environment variable name.")
+    token = os.environ.get(token_env, "").strip()
+    if not token:
+        raise ValueError(f"Environment variable {token_env!r} for connector bearer authentication is not set.")
+
+    headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _with_query_parameters(url: str, parameters: Mapping[str, int]) -> str:
