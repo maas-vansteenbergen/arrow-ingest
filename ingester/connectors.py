@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+from time import sleep
 from typing import Any, Iterator, Mapping
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -25,6 +27,14 @@ ROWS_PER_BATCH = 1_000
 class _RequestConfiguration:
     url: str
     headers: Mapping[str, str]
+    controls: "_RequestControls"
+
+
+@dataclass(frozen=True)
+class _RequestControls:
+    timeout_seconds: float | None
+    retries: int
+    backoff_seconds: float
 
 
 class RestConnector:
@@ -65,6 +75,7 @@ def _request_configuration(connector: Mapping[str, Any]) -> _RequestConfiguratio
             connector.get("headers"),
             connector.get("auth"),
         ),
+        controls=_request_controls(connector.get("request")),
     )
 
 
@@ -78,9 +89,36 @@ def _schema(schema: Mapping[str, str]) -> pa.Schema:
 
 
 def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, Any]:
-    request = Request(request_configuration.url, headers=request_configuration.headers)
-    with urlopen(request) as response:  # noqa: S310 - the connector URL is explicit user config.
-        return json.load(response)
+    controls = request_configuration.controls
+    for attempt in range(controls.retries + 1):
+        request = Request(
+            request_configuration.url,
+            headers=request_configuration.headers,
+        )
+        try:
+            if controls.timeout_seconds is None:
+                response = urlopen(request)  # noqa: S310 - the connector URL is explicit user config.
+            else:
+                response = urlopen(  # noqa: S310 - the connector URL is explicit user config.
+                    request,
+                    timeout=controls.timeout_seconds,
+                )
+            with response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code != 429 and not 500 <= error.code < 600:
+                raise
+            if attempt == controls.retries:
+                raise
+        except (TimeoutError, URLError):
+            if attempt == controls.retries:
+                raise
+
+        delay = controls.backoff_seconds * (2**attempt)
+        if delay:
+            sleep(delay)
+
+    raise AssertionError("Request retry loop exhausted unexpectedly.")
 
 
 def _records(payload: dict[str, Any], records_path: str) -> list[dict[str, Any]]:
@@ -119,6 +157,7 @@ def _offset_batches(
                     {offset_param: offset, limit_param: page_size},
                 ),
                 headers=request.headers,
+                controls=request.controls,
             )
         )
         total = _get_path(payload, total_path)
@@ -204,6 +243,43 @@ def _request_headers(configured_headers: Any, auth: Any) -> dict[str, str]:
 
     headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _request_controls(request: Any) -> _RequestControls:
+    if request is None:
+        return _RequestControls(
+            timeout_seconds=None,
+            retries=0,
+            backoff_seconds=0,
+        )
+    if not isinstance(request, Mapping):
+        raise ValueError("connector.request must be a mapping.")
+
+    timeout_seconds = request.get("timeout_seconds")
+    if timeout_seconds is not None and (
+        not isinstance(timeout_seconds, (int, float))
+        or isinstance(timeout_seconds, bool)
+        or timeout_seconds <= 0
+    ):
+        raise ValueError("connector.request.timeout_seconds must be a positive number.")
+
+    retries = request.get("retries", 0)
+    if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
+        raise ValueError("connector.request.retries must be a non-negative integer.")
+
+    backoff_seconds = request.get("backoff_seconds", 0)
+    if (
+        not isinstance(backoff_seconds, (int, float))
+        or isinstance(backoff_seconds, bool)
+        or backoff_seconds < 0
+    ):
+        raise ValueError("connector.request.backoff_seconds must be a non-negative number.")
+
+    return _RequestControls(
+        timeout_seconds=float(timeout_seconds) if timeout_seconds is not None else None,
+        retries=retries,
+        backoff_seconds=float(backoff_seconds),
+    )
 
 
 def _static_query_parameters(parameters: Any) -> dict[str, str]:

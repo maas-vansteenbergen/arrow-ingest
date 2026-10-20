@@ -13,6 +13,10 @@ connector:
     limit_param: limit
     page_size: 10
     total_path: total
+  request:
+    timeout_seconds: 30
+    retries: 3
+    backoff_seconds: 1
 
 merge: replace
 

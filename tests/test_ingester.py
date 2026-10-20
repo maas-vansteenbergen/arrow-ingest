@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
 import pyarrow as pa
@@ -165,6 +166,105 @@ def test_rest_connector_rejects_authorization_header_with_bearer_auth(
                 "headers": {"Authorization": "Bearer another-token"},
             }
         ).read()
+
+
+def test_rest_connector_retries_retryable_http_failures_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeouts: list[float] = []
+    delays: list[float] = []
+
+    def urlopen(request, timeout):
+        timeouts.append(timeout)
+        if len(timeouts) < 3:
+            raise HTTPError(request.full_url, 503, "service unavailable", hdrs=None, fp=None)
+        return BytesIO(b'{"items": [{"id": 1}]}')
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(connectors, "sleep", delays.append)
+
+    reader = RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "request": {
+                "timeout_seconds": 2.5,
+                "retries": 2,
+                "backoff_seconds": 1,
+            },
+        }
+    ).read()
+
+    assert [batch.column("id").to_pylist() for batch in reader] == [[1]]
+    assert timeouts == [2.5, 2.5, 2.5]
+    assert delays == [1, 2]
+
+
+def test_rest_connector_retries_transport_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise URLError("temporary network failure")
+        return BytesIO(b'{"items": [{"id": 1}]}')
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(connectors, "sleep", delays.append)
+
+    reader = RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "request": {
+                "timeout_seconds": 2,
+                "retries": 1,
+                "backoff_seconds": 0.5,
+            },
+        }
+    ).read()
+
+    assert [batch.column("id").to_pylist() for batch in reader] == [[1]]
+    assert attempts == 2
+    assert delays == [0.5]
+
+
+def test_rest_connector_does_not_retry_non_retryable_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(request.full_url, 401, "unauthorized", hdrs=None, fp=None)
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(connectors, "sleep", delays.append)
+
+    with pytest.raises(HTTPError, match="HTTP Error 401: unauthorized"):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64"},
+                "request": {
+                    "timeout_seconds": 2,
+                    "retries": 3,
+                    "backoff_seconds": 1,
+                },
+            }
+        ).read()
+
+    assert attempts == 1
+    assert delays == []
 
 
 def test_rest_connector_rejects_unsupported_pagination_type() -> None:

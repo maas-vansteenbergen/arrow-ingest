@@ -30,6 +30,9 @@ Initial supported connector categories
      environment variables.
    - Initial REST request customization supports static string headers and query
      parameters; bearer authentication owns the Authorization header.
+   - Initial REST reliability support provides optional request timeouts,
+     bounded retries for transport failures and 429/5xx responses, and
+     exponential backoff.
 
 4. Python as an escape hatch
    - Custom code is only for genuinely unusual APIs.
