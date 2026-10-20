@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from time import sleep
-from typing import Any, Iterator, Mapping
+from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 import pyarrow as pa
-
 
 ARROW_TYPES = {
     "int64": pa.int64(),
@@ -27,7 +27,7 @@ ROWS_PER_BATCH = 1_000
 class _RequestConfiguration:
     url: str
     headers: Mapping[str, str]
-    controls: "_RequestControls"
+    controls: _RequestControls
 
 
 @dataclass(frozen=True)
@@ -46,17 +46,22 @@ class RestConnector:
     def read(self) -> pa.RecordBatchReader:
         request = _request_configuration(self._connector)
         schema = _schema(self._connector["schema"])
+        schema_policy = _schema_policy(self._connector.get("schema_policy"))
         records_path = self._connector["records_path"]
         pagination = self._connector.get("pagination")
         if pagination is None:
             payload = _fetch_payload(request)
-            batches = _record_batches(_records(payload, records_path), schema)
+            batches = _record_batches(
+                _records(payload, records_path, schema, schema_policy),
+                schema,
+            )
         else:
             offset_param, limit_param, page_size, total_path = _offset_pagination(pagination)
             batches = _offset_batches(
                 schema,
                 request,
                 records_path,
+                schema_policy,
                 offset_param=offset_param,
                 limit_param=limit_param,
                 page_size=page_size,
@@ -80,12 +85,7 @@ def _request_configuration(connector: Mapping[str, Any]) -> _RequestConfiguratio
 
 
 def _schema(schema: Mapping[str, str]) -> pa.Schema:
-    return pa.schema(
-        [
-            pa.field(name, _arrow_type(type_name))
-            for name, type_name in schema.items()
-        ]
-    )
+    return pa.schema([pa.field(name, _arrow_type(type_name)) for name, type_name in schema.items()])
 
 
 def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, Any]:
@@ -121,10 +121,17 @@ def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, An
     raise AssertionError("Request retry loop exhausted unexpectedly.")
 
 
-def _records(payload: dict[str, Any], records_path: str) -> list[dict[str, Any]]:
+def _records(
+    payload: dict[str, Any],
+    records_path: str,
+    schema: pa.Schema,
+    schema_policy: str,
+) -> list[dict[str, Any]]:
     records = _get_path(payload, records_path)
     if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
         raise ValueError("connector.records_path must resolve to a list of JSON objects.")
+    if schema_policy == "strict":
+        _validate_strict_records(records, schema)
     return records
 
 
@@ -142,6 +149,7 @@ def _offset_batches(
     schema: pa.Schema,
     request: _RequestConfiguration,
     records_path: str,
+    schema_policy: str,
     *,
     offset_param: str,
     limit_param: str,
@@ -162,11 +170,13 @@ def _offset_batches(
         )
         total = _get_path(payload, total_path)
         if not isinstance(total, int) or isinstance(total, bool) or total < 0:
-            raise ValueError("connector.pagination.total_path must resolve to a non-negative integer.")
+            raise ValueError(
+                "connector.pagination.total_path must resolve to a non-negative integer."
+            )
         if offset >= total:
             return
 
-        records = _records(payload, records_path)
+        records = _records(payload, records_path, schema, schema_policy)
         if not records:
             raise ValueError("connector pagination returned no records before reaching the total.")
 
@@ -181,7 +191,49 @@ def _arrow_type(type_name: str) -> pa.DataType:
         return ARROW_TYPES[type_name]
     except KeyError as error:
         supported = ", ".join(ARROW_TYPES)
-        raise ValueError(f"Unsupported Arrow type {type_name!r}. Supported types: {supported}.") from error
+        raise ValueError(
+            f"Unsupported Arrow type {type_name!r}. Supported types: {supported}."
+        ) from error
+
+
+def _schema_policy(value: Any) -> str:
+    if value is None:
+        return "strict"
+    if value != "strict":
+        raise ValueError("connector.schema_policy must be 'strict'.")
+    return value
+
+
+def _validate_strict_records(records: list[dict[str, Any]], schema: pa.Schema) -> None:
+    expected_fields = set(schema.names)
+    for record_index, record in enumerate(records):
+        missing_fields = expected_fields.difference(record)
+        if missing_fields:
+            fields = ", ".join(sorted(missing_fields))
+            raise ValueError(f"Record {record_index} is missing declared fields: {fields}.")
+
+        for field in schema:
+            _validate_strict_value(record_index, field, record[field.name])
+
+
+def _validate_strict_value(record_index: int, field: pa.Field, value: Any) -> None:
+    if value is None:
+        if field.nullable:
+            return
+        raise ValueError(f"Record {record_index} field {field.name!r} cannot be null.")
+
+    valid_type = (
+        (field.type == pa.int64() and type(value) is int)
+        or (field.type == pa.float64() and type(value) is float)
+        or (field.type == pa.string() and type(value) is str)
+        or (field.type == pa.bool_() and type(value) is bool)
+    )
+    if valid_type:
+        return
+    raise ValueError(
+        f"Record {record_index} field {field.name!r} must be {field.type}, "
+        f"got {type(value).__name__}."
+    )
 
 
 def _get_path(payload: dict[str, Any], path: str) -> Any:
@@ -202,7 +254,9 @@ def _offset_pagination(pagination: Any) -> tuple[str, str, int, str]:
     offset_param = pagination.get("offset_param")
     limit_param = pagination.get("limit_param")
     total_path = pagination.get("total_path")
-    if not all(isinstance(value, str) and value for value in (offset_param, limit_param, total_path)):
+    if not all(
+        isinstance(value, str) and value for value in (offset_param, limit_param, total_path)
+    ):
         raise ValueError(
             "connector.pagination must define non-empty offset_param, limit_param, and total_path values."
         )
@@ -224,7 +278,9 @@ def _request_headers(configured_headers: Any, auth: Any) -> dict[str, str]:
             if not isinstance(value, str):
                 raise ValueError("connector.headers must use string values.")
             if auth is not None and name.casefold() == "authorization":
-                raise ValueError("connector.headers cannot define Authorization when connector.auth is configured.")
+                raise ValueError(
+                    "connector.headers cannot define Authorization when connector.auth is configured."
+                )
             headers[name] = value
 
     if auth is None:
@@ -239,7 +295,9 @@ def _request_headers(configured_headers: Any, auth: Any) -> dict[str, str]:
         raise ValueError("connector.auth.token_env must be a non-empty environment variable name.")
     token = os.environ.get(token_env, "").strip()
     if not token:
-        raise ValueError(f"Environment variable {token_env!r} for connector bearer authentication is not set.")
+        raise ValueError(
+            f"Environment variable {token_env!r} for connector bearer authentication is not set."
+        )
 
     headers["Authorization"] = f"Bearer {token}"
     return headers
