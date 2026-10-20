@@ -26,6 +26,8 @@ Initial supported connector categories
    - Common ingestion patterns should not require custom Python.
    - Initial REST pagination support is offset-based, configured by offset and
      limit parameter names, page size, and a response total path.
+   - Initial REST authentication support is bearer tokens resolved from named
+     environment variables.
 
 4. Python as an escape hatch
    - Custom code is only for genuinely unusual APIs.
