@@ -189,3 +189,16 @@ Bearer authentication implementation completed
 - Verified the configured bearer header is sent for regular and every
   paginated request.
 - `python -m pytest -q tests/test_ingester.py` passed: 7 tests.
+
+Static request configuration implementation completed
+-----------------------------------------------------
+- Adding static string headers and query parameters to RestConnector.
+- Preserving static query parameters across every paginated request while
+  pagination overrides only its offset and limit parameters.
+- Rejecting a configured Authorization header when bearer authentication is
+  also configured.
+- Not adding header templating, non-string parameter values, OAuth, retries,
+  or rate limiting.
+- Verified static headers and query parameters are present on every configured
+  offset-pagination request.
+- `python -m pytest -q tests/test_ingester.py` passed: 8 tests.

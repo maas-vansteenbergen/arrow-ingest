@@ -103,12 +103,14 @@ def test_rest_connector_uses_configured_offset_pagination(
     }
     requests: list[dict[str, list[str]]] = []
     authorization_headers: list[str | None] = []
+    accept_headers: list[str | None] = []
     monkeypatch.setenv("PRODUCTS_API_TOKEN", "test-token")
 
     def urlopen(request):
         query = parse_qs(urlsplit(request.full_url).query)
         requests.append(query)
         authorization_headers.append(request.get_header("Authorization"))
+        accept_headers.append(request.get_header("Accept"))
         return BytesIO(json.dumps(payloads[int(query["skip"][0])]).encode())
 
     monkeypatch.setattr(connectors, "urlopen", urlopen)
@@ -119,6 +121,8 @@ def test_rest_connector_uses_configured_offset_pagination(
             "records_path": "products",
             "schema": {"id": "int64"},
             "auth": {"type": "bearer", "token_env": "PRODUCTS_API_TOKEN"},
+            "headers": {"Accept": "application/json"},
+            "params": {"locale": "en-US"},
             "pagination": {
                 "type": "offset",
                 "offset_param": "skip",
@@ -133,11 +137,34 @@ def test_rest_connector_uses_configured_offset_pagination(
 
     assert [batch.column("id").to_pylist() for batch in batches] == [[1, 2], [3, 4], [5]]
     assert requests == [
-        {"skip": ["0"], "limit": ["2"]},
-        {"skip": ["2"], "limit": ["2"]},
-        {"skip": ["4"], "limit": ["2"]},
+        {"locale": ["en-US"], "skip": ["0"], "limit": ["2"]},
+        {"locale": ["en-US"], "skip": ["2"], "limit": ["2"]},
+        {"locale": ["en-US"], "skip": ["4"], "limit": ["2"]},
     ]
     assert authorization_headers == ["Bearer test-token"] * 3
+
+
+    assert accept_headers == ["application/json"] * 3
+
+
+def test_rest_connector_rejects_authorization_header_with_bearer_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PRODUCTS_API_TOKEN", "test-token")
+
+    with pytest.raises(
+        ValueError,
+        match=r"connector.headers cannot define Authorization when connector.auth is configured.",
+    ):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64"},
+                "auth": {"type": "bearer", "token_env": "PRODUCTS_API_TOKEN"},
+                "headers": {"Authorization": "Bearer another-token"},
+            }
+        ).read()
 
 
 def test_rest_connector_rejects_unsupported_pagination_type() -> None:
