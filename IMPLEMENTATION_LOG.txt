@@ -13,6 +13,7 @@ Implementation roadmap
   -  GitHub Actions CI, and
   -  development-container review
 - [x] Parquet file connector
+- [x] Test suite cleanup
 - [ ] DuckDB target (next)
 - [ ] Append merge strategy
 - [ ] Cursor/incremental state
@@ -300,3 +301,15 @@ Parquet file connector implementation completed
   and wrote the expected target Parquet output.
 - Not implemented: object storage, partition discovery, schema policy for
   Parquet input, non-Parquet flat files, or connector registries.
+
+Test suite cleanup completed
+----------------------------
+- Split the monolithic test file into REST connector, Parquet connector,
+  Parquet target, and merge-strategy test modules.
+- Added module-local REST fixtures for repeated connector configuration and
+  simple JSON responses; custom request-inspection and retry fakes remain
+  inline with their specific tests.
+- Did not introduce a shared fixture framework.
+- Preserved all 17 behavioral tests and left production code unchanged.
+- Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
+  all 17 pytest tests.
