@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 
 import pyarrow as pa
 
 
-class MergeStrategy(str, Enum):
+class MergeStrategy(StrEnum):
     REPLACE = "replace"
 
 

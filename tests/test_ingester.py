@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from io import BytesIO
 import json
+from io import BytesIO
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
@@ -15,7 +15,9 @@ from ingester.core import MergeStrategy, parse_merge_strategy
 from ingester.targets import ParquetTarget
 
 
-def test_rest_connector_selects_records_and_applies_declared_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rest_connector_selects_records_and_applies_declared_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     payload = {
         "response": {
             "items": [
@@ -41,6 +43,111 @@ def test_rest_connector_selects_records_and_applies_declared_schema(monkeypatch:
 
     assert table.schema == pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
     assert table.to_pylist() == [{"id": 1, "title": "first"}, {"id": 2, "title": "second"}]
+
+
+def test_strict_schema_policy_allows_null_for_nullable_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": 1, "title": null}]}'),
+    )
+
+    table = (
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        )
+        .read()
+        .read_all()
+    )
+
+    assert table.to_pylist() == [{"id": 1, "title": None}]
+
+
+def test_strict_schema_policy_rejects_missing_declared_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": 1}]}'),
+    )
+
+    with pytest.raises(ValueError, match=r"Record 0 is missing declared fields: title."):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        ).read()
+
+
+def test_strict_schema_policy_ignores_undeclared_source_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": 1, "title": "first", "unexpected": "value"}]}'),
+    )
+
+    table = (
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        )
+        .read()
+        .read_all()
+    )
+
+    assert table.to_pylist() == [{"id": 1, "title": "first"}]
+
+
+def test_strict_schema_policy_rejects_type_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": "1", "title": "first"}]}'),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Record 0 field 'id' must be int64, got str.",
+    ):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        ).read()
+
+
+def test_rest_connector_rejects_unsupported_schema_policy() -> None:
+    with pytest.raises(ValueError, match=r"connector.schema_policy must be 'strict'."):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64"},
+                "schema_policy": "cast",
+            }
+        ).read()
 
 
 def test_rest_connector_sends_bearer_token_from_environment(
@@ -143,7 +250,6 @@ def test_rest_connector_uses_configured_offset_pagination(
         {"locale": ["en-US"], "skip": ["4"], "limit": ["2"]},
     ]
     assert authorization_headers == ["Bearer test-token"] * 3
-
 
     assert accept_headers == ["application/json"] * 3
 

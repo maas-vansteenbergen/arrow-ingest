@@ -33,6 +33,9 @@ Initial supported connector categories
    - Initial REST reliability support provides optional request timeouts,
      bounded retries for transport failures and 429/5xx responses, and
      exponential backoff.
+   - Initial schema handling is a strict projection: every declared field must
+     be present with a matching primitive type; undeclared source fields are
+     ignored; null is allowed only for nullable Arrow fields.
 
 4. Python as an escape hatch
    - Custom code is only for genuinely unusual APIs.

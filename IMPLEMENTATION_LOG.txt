@@ -1,6 +1,23 @@
 Implementation log
 ==================
 
+Implementation roadmap
+----------------------
+- [x] Commit pagination
+- [x] Bearer authentication
+- [x] Static headers/query parameters
+- [x] Timeout/retry controls
+- [x] Strict schema policy
+- [x] Repository foundations
+  -  linting/formatting
+  -  GitHub Actions CI, and
+  -  development-container review
+- [ ] Parquet file connector (next)
+- [ ] DuckDB target
+- [ ] Append merge strategy
+- [ ] Cursor/incremental state
+- [ ] Upsert and SCD2 merge strategies
+
 Completed
 ---------
 - Added a Connector protocol with read() returning pyarrow.RecordBatchReader.
@@ -228,3 +245,33 @@ Timeout and retry implementation completed
 - `python -m pytest -q tests/test_ingester.py` passed: 11 tests.
 - The configured demo fetched 194 products and wrote them to a temporary
   Parquet file with the declared five columns.
+
+Strict schema policy implementation completed
+---------------------------------------------
+- Added `schema_policy: strict`, which is also the default when omitted.
+- Strict is a projection policy: every declared field is required and must
+  match its declared primitive Arrow type; undeclared source fields are
+  ignored.
+- Null remains valid only for nullable Arrow fields.
+- Rejected unsupported policies rather than silently falling back.
+- Added tests for nullable fields, missing declared fields, undeclared source
+  fields, type mismatches, and unsupported policy names.
+- `python -m pytest -q tests/test_ingester.py` passed: 16 tests.
+- The configured demo fetched 194 products with strict projection validation
+  and wrote the declared five columns to a temporary Parquet file.
+
+Repository foundations completed
+--------------------------------
+- Replaced requirements.txt with uv-managed pyproject.toml and uv.lock.
+- Added Ruff linting and formatting configuration.
+- Added GitHub Actions CI that runs locked dependency sync, Ruff lint/format
+  checks, and pytest.
+- Updated the development container to install uv, synchronize all dependency
+  groups, and include the Ruff VS Code extension.
+- Added .ruff_cache to .gitignore.
+- Local CI-equivalent validation passed:
+  `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest`.
+- Refreshed the lockfile with `uv lock --upgrade`; no newer compatible
+  dependencies were available.
+- Current direct dependencies: pyarrow 26.0.0, PyYAML 6.0.3, pytest 9.1.1,
+  and Ruff 0.17.1.
