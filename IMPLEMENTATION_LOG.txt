@@ -12,8 +12,8 @@ Implementation roadmap
   -  linting/formatting
   -  GitHub Actions CI, and
   -  development-container review
-- [ ] Parquet file connector (next)
-- [ ] DuckDB target
+- [x] Parquet file connector
+- [ ] DuckDB target (next)
 - [ ] Append merge strategy
 - [ ] Cursor/incremental state
 - [ ] Upsert and SCD2 merge strategies
@@ -286,3 +286,17 @@ Python 3.15 support added
   compatibility changes were identified for the current pure-Python code.
 - Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
   all 16 pytest tests.
+
+Parquet file connector implementation completed
+------------------------------------------------
+- Added ParquetConnector, which exposes local Parquet files as native Arrow
+  RecordBatchReader streams without schema normalization or data conversion.
+- Added explicit `connector.type` selection in the demo CLI for `rest` and
+  `parquet`; this is a private CLI switch, not a connector registry.
+- Added a focused test for Parquet schema and row preservation.
+- Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
+  all 17 pytest tests.
+- A temporary `type: parquet` CLI configuration read a local Parquet source
+  and wrote the expected target Parquet output.
+- Not implemented: object storage, partition discovery, schema policy for
+  Parquet input, non-Parquet flat files, or connector registries.

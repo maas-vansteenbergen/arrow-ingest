@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import yaml
 
-from ingester.connectors import RestConnector
+from ingester.connectors import ParquetConnector, RestConnector
 from ingester.core import Connector, Target, parse_merge_strategy
 from ingester.targets import ParquetTarget
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run a minimal JSON-to-Arrow-to-Parquet ingestion."
-    )
+    parser = argparse.ArgumentParser(description="Run a minimal Arrow-to-Parquet ingestion.")
     parser.add_argument(
         "config", nargs="?", default="connector.yaml", help="Path to the connector YAML."
     )
@@ -27,11 +27,20 @@ def main() -> None:
     target = config["target"]
     strategy = parse_merge_strategy(config["merge"])
 
-    connector: Connector = RestConnector(connector_config)
+    connector = _connector_from_config(connector_config)
     destination: Target = ParquetTarget(target)
     stream = connector.read()
     row_count = destination.load(stream, strategy)
     print(f"Wrote {row_count} rows with {len(stream.schema)} columns to {target['path']}")
+
+
+def _connector_from_config(config: Mapping[str, Any]) -> Connector:
+    connector_type = config.get("type")
+    if connector_type == "rest":
+        return RestConnector(config)
+    if connector_type == "parquet":
+        return ParquetConnector(config)
+    raise ValueError("connector.type must be 'rest' or 'parquet'.")
 
 
 if __name__ == "__main__":
