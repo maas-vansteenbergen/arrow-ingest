@@ -13,8 +13,12 @@ from ingester.targets import ParquetTarget
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a minimal JSON-to-Arrow-to-Parquet ingestion.")
-    parser.add_argument("config", nargs="?", default="connector.yaml", help="Path to the connector YAML.")
+    parser = argparse.ArgumentParser(
+        description="Run a minimal JSON-to-Arrow-to-Parquet ingestion."
+    )
+    parser.add_argument(
+        "config", nargs="?", default="connector.yaml", help="Path to the connector YAML."
+    )
     args = parser.parse_args()
 
     with Path(args.config).open(encoding="utf-8") as config_file:

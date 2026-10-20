@@ -271,7 +271,18 @@ Repository foundations completed
 - Added .ruff_cache to .gitignore.
 - Local CI-equivalent validation passed:
   `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest`.
-- Refreshed the lockfile with `uv lock --upgrade`; no newer compatible
-  dependencies were available.
-- Current direct dependencies: pyarrow 26.0.0, PyYAML 6.0.3, pytest 9.1.1,
-  and Ruff 0.17.1.
+- Verified live PyPI releases and raised declared baselines to the newest
+  Python-3.12-compatible versions.
+- Current direct dependencies: PyArrow 26.0.0, PyYAML 6.0.3, pytest 9.1.1,
+  Ruff 0.17.1, and Hatchling 1.32.4.
+
+Python 3.15 support added
+-------------------------
+- Retained Python 3.12 as the minimum (`requires-python = ">=3.12"`) and
+  Ruff compatibility target (`py312`).
+- Added Python 3.15 as the tested CI ceiling and package classifier.
+- Updated the development container to Python 3.15.
+- Reviewed the official Python 3.15 What's New/porting guidance; no relevant
+  compatibility changes were identified for the current pure-Python code.
+- Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
+  all 16 pytest tests.
