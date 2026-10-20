@@ -1,5 +1,5 @@
 connector:
-  url: https://dummyjson.com/products?limit=10
+  url: https://dummyjson.com/products
   records_path: products
   schema:
     id: int64
@@ -7,6 +7,12 @@ connector:
     price: float64
     category: string
     stock: int64
+  pagination:
+    type: offset
+    offset_param: skip
+    limit_param: limit
+    page_size: 10
+    total_path: total
 
 merge: replace
 

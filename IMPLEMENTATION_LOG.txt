@@ -163,3 +163,16 @@ The test name now matches the `ingester` package that it exercises directly,
 rather than the thin demo CLI. Structural cleanup is complete; further module
 splitting or package infrastructure would not provide enough value at the
 current project size.
+
+Offset pagination implementation completed
+------------------------------------------
+- Added the first declarative REST pagination mode directly to RestConnector.
+- Supporting only YAML-configured offset/limit pagination with a response total
+  path.
+- Emitting Arrow batches per fetched page without a Paginator abstraction.
+- Not adding cursor or next-link pagination, state, authentication, retries, or
+  rate limiting.
+- Added tests for configured page queries and unsupported pagination modes.
+- `python -m pytest -q tests/test_ingester.py` passed: 5 tests.
+- The configured demo fetched 194 products through offset pagination and wrote
+  them to a temporary Parquet file with the declared five columns.

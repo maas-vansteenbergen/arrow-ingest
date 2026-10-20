@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+from urllib.parse import parse_qs, urlsplit
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -39,6 +40,60 @@ def test_rest_connector_selects_records_and_applies_declared_schema(monkeypatch:
 
     assert table.schema == pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
     assert table.to_pylist() == [{"id": 1, "title": "first"}, {"id": 2, "title": "second"}]
+
+
+def test_rest_connector_uses_configured_offset_pagination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = {
+        0: {"products": [{"id": 1}, {"id": 2}], "total": 5},
+        2: {"products": [{"id": 3}, {"id": 4}], "total": 5},
+        4: {"products": [{"id": 5}], "total": 5},
+    }
+    requests: list[dict[str, list[str]]] = []
+
+    def urlopen(request):
+        query = parse_qs(urlsplit(request.full_url).query)
+        requests.append(query)
+        return BytesIO(json.dumps(payloads[int(query["skip"][0])]).encode())
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+
+    reader = RestConnector(
+        {
+            "url": "https://example.test/products",
+            "records_path": "products",
+            "schema": {"id": "int64"},
+            "pagination": {
+                "type": "offset",
+                "offset_param": "skip",
+                "limit_param": "limit",
+                "page_size": 2,
+                "total_path": "total",
+            },
+        }
+    ).read()
+
+    batches = list(reader)
+
+    assert [batch.column("id").to_pylist() for batch in batches] == [[1, 2], [3, 4], [5]]
+    assert requests == [
+        {"skip": ["0"], "limit": ["2"]},
+        {"skip": ["2"], "limit": ["2"]},
+        {"skip": ["4"], "limit": ["2"]},
+    ]
+
+
+def test_rest_connector_rejects_unsupported_pagination_type() -> None:
+    with pytest.raises(ValueError, match=r"connector.pagination.type must be 'offset'."):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64"},
+                "pagination": {"type": "cursor"},
+            }
+        ).read()
 
 
 def test_parquet_target_persists_multiple_arrow_batches(tmp_path) -> None:
