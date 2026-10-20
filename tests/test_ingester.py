@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from ingester import connectors
-from ingester.connectors import RestConnector
+from ingester.connectors import ParquetConnector, RestConnector
 from ingester.core import MergeStrategy, parse_merge_strategy
 from ingester.targets import ParquetTarget
 
@@ -148,6 +148,26 @@ def test_rest_connector_rejects_unsupported_schema_policy() -> None:
                 "schema_policy": "cast",
             }
         ).read()
+
+
+def test_parquet_connector_emits_native_arrow_batches(tmp_path) -> None:
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
+    source = tmp_path / "products.parquet"
+    pq.write_table(
+        pa.Table.from_pylist(
+            [{"id": 1, "title": "first"}, {"id": 2, "title": "second"}],
+            schema=schema,
+        ),
+        source,
+    )
+
+    reader = ParquetConnector({"path": str(source)}).read()
+
+    assert reader.schema == schema
+    assert reader.read_all().to_pylist() == [
+        {"id": 1, "title": "first"},
+        {"id": 2, "title": "second"},
+    ]
 
 
 def test_rest_connector_sends_bearer_token_from_environment(

@@ -1,4 +1,5 @@
 connector:
+  type: rest
   url: https://dummyjson.com/products
   records_path: products
   schema:

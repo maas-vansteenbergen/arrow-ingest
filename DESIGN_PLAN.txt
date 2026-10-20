@@ -12,7 +12,8 @@ Design Goals
    - No source/resource distinction.
 
 Initial supported connector categories
-   - Parquet files.
+   - Parquet files. Initial support reads local Parquet files as native Arrow
+     batches.
    - Flat files, including CSV and JSON Lines.
    - Databases with ADBC support.
    - HTTP APIs.
