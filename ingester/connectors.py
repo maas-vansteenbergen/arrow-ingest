@@ -27,7 +27,14 @@ class RestConnector:
         self._connector = connector
 
     def read(self) -> pa.RecordBatchReader:
-        headers = _request_headers(self._connector.get("auth"))
+        headers = _request_headers(
+            self._connector.get("headers"),
+            self._connector.get("auth"),
+        )
+        url = _with_query_parameters(
+            self._connector["url"],
+            _static_query_parameters(self._connector.get("params")),
+        )
         schema = pa.schema(
             [
                 pa.field(name, _arrow_type(type_name))
@@ -36,12 +43,13 @@ class RestConnector:
         )
         pagination = self._connector.get("pagination")
         if pagination is None:
-            payload = self._fetch_payload(self._connector["url"], headers)
+            payload = self._fetch_payload(url, headers)
             batches = self._record_batches(self._records(payload), schema)
         else:
             offset_param, limit_param, page_size, total_path = _offset_pagination(pagination)
             batches = self._offset_batches(
                 schema,
+                url=url,
                 offset_param=offset_param,
                 limit_param=limit_param,
                 page_size=page_size,
@@ -75,6 +83,7 @@ class RestConnector:
         self,
         schema: pa.Schema,
         *,
+        url: str,
         offset_param: str,
         limit_param: str,
         page_size: int,
@@ -85,7 +94,7 @@ class RestConnector:
         while True:
             payload = self._fetch_payload(
                 _with_query_parameters(
-                    self._connector["url"],
+                    url,
                     {offset_param: offset, limit_param: page_size},
                 ),
                 headers,
@@ -143,8 +152,20 @@ def _offset_pagination(pagination: Any) -> tuple[str, str, int, str]:
     return offset_param, limit_param, page_size, total_path
 
 
-def _request_headers(auth: Any) -> dict[str, str]:
+def _request_headers(configured_headers: Any, auth: Any) -> dict[str, str]:
     headers = {"User-Agent": "arrow-ingest-demo/0.1"}
+    if configured_headers is not None:
+        if not isinstance(configured_headers, Mapping):
+            raise ValueError("connector.headers must be a mapping.")
+        for name, value in configured_headers.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError("connector.headers must use non-empty string names.")
+            if not isinstance(value, str):
+                raise ValueError("connector.headers must use string values.")
+            if auth is not None and name.casefold() == "authorization":
+                raise ValueError("connector.headers cannot define Authorization when connector.auth is configured.")
+            headers[name] = value
+
     if auth is None:
         return headers
     if not isinstance(auth, Mapping):
@@ -163,7 +184,23 @@ def _request_headers(auth: Any) -> dict[str, str]:
     return headers
 
 
-def _with_query_parameters(url: str, parameters: Mapping[str, int]) -> str:
+def _static_query_parameters(parameters: Any) -> dict[str, str]:
+    if parameters is None:
+        return {}
+    if not isinstance(parameters, Mapping):
+        raise ValueError("connector.params must be a mapping.")
+
+    query_parameters: dict[str, str] = {}
+    for name, value in parameters.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("connector.params must use non-empty string names.")
+        if not isinstance(value, str):
+            raise ValueError("connector.params must use string values.")
+        query_parameters[name] = value
+    return query_parameters
+
+
+def _with_query_parameters(url: str, parameters: Mapping[str, str | int]) -> str:
     parts = urlsplit(url)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query.update({name: str(value) for name, value in parameters.items()})

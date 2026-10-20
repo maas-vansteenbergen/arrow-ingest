@@ -28,6 +28,8 @@ Initial supported connector categories
      limit parameter names, page size, and a response total path.
    - Initial REST authentication support is bearer tokens resolved from named
      environment variables.
+   - Initial REST request customization supports static string headers and query
+     parameters; bearer authentication owns the Authorization header.
 
 4. Python as an escape hatch
    - Custom code is only for genuinely unusual APIs.
