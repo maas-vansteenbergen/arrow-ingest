@@ -202,3 +202,15 @@ Static request configuration implementation completed
 - Verified static headers and query parameters are present on every configured
   offset-pagination request.
 - `python -m pytest -q tests/test_ingester.py` passed: 8 tests.
+
+RestConnector cleanup completed
+-------------------------------
+- Added a private immutable request configuration that resolves the URL,
+  headers, authentication, and static query parameters once per run.
+- Separated private helpers for request execution, schema construction, record
+  selection, Arrow batch creation, and offset pagination.
+- Kept RestConnector as the only public REST connector concept and preserved
+  the YAML contract.
+- This provides a clear request-execution boundary for bounded retry and
+  timeout behavior without adding a retry framework.
+- `python -m pytest -q tests/test_ingester.py` passed: 8 tests.
