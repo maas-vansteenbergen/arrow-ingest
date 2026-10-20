@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from io import BytesIO
 import json
+from io import BytesIO
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
 import pyarrow as pa
@@ -14,7 +15,9 @@ from ingester.core import MergeStrategy, parse_merge_strategy
 from ingester.targets import ParquetTarget
 
 
-def test_rest_connector_selects_records_and_applies_declared_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rest_connector_selects_records_and_applies_declared_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     payload = {
         "response": {
             "items": [
@@ -40,6 +43,111 @@ def test_rest_connector_selects_records_and_applies_declared_schema(monkeypatch:
 
     assert table.schema == pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
     assert table.to_pylist() == [{"id": 1, "title": "first"}, {"id": 2, "title": "second"}]
+
+
+def test_strict_schema_policy_allows_null_for_nullable_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": 1, "title": null}]}'),
+    )
+
+    table = (
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        )
+        .read()
+        .read_all()
+    )
+
+    assert table.to_pylist() == [{"id": 1, "title": None}]
+
+
+def test_strict_schema_policy_rejects_missing_declared_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": 1}]}'),
+    )
+
+    with pytest.raises(ValueError, match=r"Record 0 is missing declared fields: title."):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        ).read()
+
+
+def test_strict_schema_policy_ignores_undeclared_source_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": 1, "title": "first", "unexpected": "value"}]}'),
+    )
+
+    table = (
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        )
+        .read()
+        .read_all()
+    )
+
+    assert table.to_pylist() == [{"id": 1, "title": "first"}]
+
+
+def test_strict_schema_policy_rejects_type_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        connectors,
+        "urlopen",
+        lambda request: BytesIO(b'{"items": [{"id": "1", "title": "first"}]}'),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Record 0 field 'id' must be int64, got str.",
+    ):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64", "title": "string"},
+                "schema_policy": "strict",
+            }
+        ).read()
+
+
+def test_rest_connector_rejects_unsupported_schema_policy() -> None:
+    with pytest.raises(ValueError, match=r"connector.schema_policy must be 'strict'."):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64"},
+                "schema_policy": "cast",
+            }
+        ).read()
 
 
 def test_rest_connector_sends_bearer_token_from_environment(
@@ -143,7 +251,6 @@ def test_rest_connector_uses_configured_offset_pagination(
     ]
     assert authorization_headers == ["Bearer test-token"] * 3
 
-
     assert accept_headers == ["application/json"] * 3
 
 
@@ -165,6 +272,105 @@ def test_rest_connector_rejects_authorization_header_with_bearer_auth(
                 "headers": {"Authorization": "Bearer another-token"},
             }
         ).read()
+
+
+def test_rest_connector_retries_retryable_http_failures_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeouts: list[float] = []
+    delays: list[float] = []
+
+    def urlopen(request, timeout):
+        timeouts.append(timeout)
+        if len(timeouts) < 3:
+            raise HTTPError(request.full_url, 503, "service unavailable", hdrs=None, fp=None)
+        return BytesIO(b'{"items": [{"id": 1}]}')
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(connectors, "sleep", delays.append)
+
+    reader = RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "request": {
+                "timeout_seconds": 2.5,
+                "retries": 2,
+                "backoff_seconds": 1,
+            },
+        }
+    ).read()
+
+    assert [batch.column("id").to_pylist() for batch in reader] == [[1]]
+    assert timeouts == [2.5, 2.5, 2.5]
+    assert delays == [1, 2]
+
+
+def test_rest_connector_retries_transport_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise URLError("temporary network failure")
+        return BytesIO(b'{"items": [{"id": 1}]}')
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(connectors, "sleep", delays.append)
+
+    reader = RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "request": {
+                "timeout_seconds": 2,
+                "retries": 1,
+                "backoff_seconds": 0.5,
+            },
+        }
+    ).read()
+
+    assert [batch.column("id").to_pylist() for batch in reader] == [[1]]
+    assert attempts == 2
+    assert delays == [0.5]
+
+
+def test_rest_connector_does_not_retry_non_retryable_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(request.full_url, 401, "unauthorized", hdrs=None, fp=None)
+
+    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(connectors, "sleep", delays.append)
+
+    with pytest.raises(HTTPError, match="HTTP Error 401: unauthorized"):
+        RestConnector(
+            {
+                "url": "https://example.test/items",
+                "records_path": "items",
+                "schema": {"id": "int64"},
+                "request": {
+                    "timeout_seconds": 2,
+                    "retries": 3,
+                    "backoff_seconds": 1,
+                },
+            }
+        ).read()
+
+    assert attempts == 1
+    assert delays == []
 
 
 def test_rest_connector_rejects_unsupported_pagination_type() -> None:

@@ -7,12 +7,17 @@ connector:
     price: float64
     category: string
     stock: int64
+  schema_policy: strict
   pagination:
     type: offset
     offset_param: skip
     limit_param: limit
     page_size: 10
     total_path: total
+  request:
+    timeout_seconds: 30
+    retries: 3
+    backoff_seconds: 1
 
 merge: replace
 
