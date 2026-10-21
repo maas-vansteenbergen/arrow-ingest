@@ -53,6 +53,22 @@ Pipeline runtime abstraction.
   limit parameter names, page size, and a response total path.
 - The initial HTTP authentication model is bearer tokens resolved from named
   environment variables. Bearer authentication owns the Authorization header.
+- Authentication configuration contains credential references, never plaintext
+  credentials. Credentials are resolved from named environment variables or a
+  supported secret-provider integration.
+- Future machine-to-machine authentication models may include API keys in
+  headers or query parameters, HTTP Basic authentication, and OAuth 2.0
+  client-credentials authentication with token refresh.
+- Scheduled ingestion must run non-interactively.
+- OAuth refresh tokens may be established through an out-of-band
+  authorization-code or device flow. Credential bootstrap is separate from
+  connector execution and stores resulting credentials through the configured
+  secret mechanism.
+- Custom request signing, mutual TLS, and SDK-specific authentication are not
+  initial core capabilities, but may be added when they represent reusable
+  connector requirements.
+- New authentication models must represent broadly reusable HTTP patterns and
+  preserve predictable, testable configuration semantics.
 - Request reliability uses optional timeouts, bounded retries for transport
   failures and retryable HTTP responses, and exponential backoff.
 - Schema handling defaults to strict projection: every declared field must be
