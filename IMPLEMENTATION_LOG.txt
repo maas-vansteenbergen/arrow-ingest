@@ -15,6 +15,7 @@ Implementation roadmap
 - [x] Parquet file connector
 - [x] Test suite cleanup
 - [x] DuckDB target
+- [x] Connector and target module cleanup
 - [ ] Append merge strategy (next)
 - [ ] Cursor/incremental state
 - [ ] Upsert and SCD2 merge strategies
@@ -326,3 +327,19 @@ DuckDB target implementation completed
   order and that the reported row count is correct.
 - Not implemented: append, upsert, SCD2, schemas/catalogs, ADBC loading, or
   remote DuckDB connections.
+
+Connector and target module cleanup completed
+---------------------------------------------
+- Split concrete implementations into dedicated modules:
+  `connectors.rest`, `connectors.parquet`, `targets.parquet`, and
+  `targets.duckdb`.
+- Retained `ingester.connectors` and `ingester.targets` as import facades, so
+  existing consumer imports remain stable.
+- Kept type selection explicit in the thin demo CLI. It now has symmetric
+  private dispatch for the supported connector and target types, without a
+  registry, factory framework, or new runtime abstraction.
+- Moved REST request mocking in the test suite to the REST implementation
+  module and added focused tests for supported and unsupported CLI type
+  selection.
+- Further splitting remains deferred until a concrete implementation gains
+  enough independent behavior to warrant it.
