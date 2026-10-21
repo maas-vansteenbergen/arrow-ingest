@@ -23,4 +23,5 @@ connector:
 merge: replace
 
 target:
+  type: parquet
   path: ./output/products.parquet

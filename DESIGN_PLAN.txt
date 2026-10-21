@@ -51,6 +51,8 @@ Initial supported connector categories
    - Support targets with a strong Arrow story.
    - Examples: Parquet, DuckDB, Iceberg, Delta, Postgres via ADBC, Snowflake via ADBC.
    - Reducing scope is a feature.
+   - Initial DuckDB support writes a RecordBatchReader directly into a named
+     table in a local database file. It supports replace only.
 
 7. Loaders built around ADBC
    - Prefer standardized Arrow ingestion paths.
@@ -60,18 +62,27 @@ Initial supported connector categories
    - Use Polars internally for schema normalization, casting and transformations.
    - Keep Arrow as the public contract.
 
-9. Orchestration is out of scope
+9. Transformations are declarative and Arrow-preserving
+   - Transformations operate on Arrow streams through Polars.
+   - Transformations consume Arrow and emit Arrow.
+   - Transformations do not introduce a new framework data model.
+   - Common operations (select, rename, cast, derive, filter) should be declarative.
+   - Complex business logic belongs outside the ingestion framework.
+   - The goal is schema shaping and normalization for loading.
+   - Analytical modelling, aggregations and cross-dataset joins are out of scope.
+
+10. Orchestration is out of scope
    - Integrates with Prefect, Dagster, Airflow, Temporal, etc.
    - The framework is for ingestion, not workflow management.
 
-10. Merge strategies as a first-class concept
+11. Merge strategies as a first-class concept
     - append
     - replace
     - upsert
     - scd2
     - Only retain state required to implement these strategies.
 
-11. Relentlessly small abstraction surface
+12. Relentlessly small abstraction surface
     Core concepts:
       - Connector
       - Cursor
@@ -87,6 +98,34 @@ Initial supported connector categories
       - Dataset
       - Block
       - Flow
+
+13. Cursor philosophy
+
+- State should be derived rather than stored whenever possible.
+- Incremental ingestion should be based on loaded data or on columns derived through the framework's declarative transformation layer.
+- Framework transformations may create timestamps, version markers, hashes, or other values needed to support incremental loading and merge strategies.
+- Derived values are preferred over framework-managed metadata whenever they provide equivalent behavior.
+- The framework must not add hidden ingestion metadata columns to user datasets.
+- Opaque cursor persistence is a last resort for source protocols that expose irreducible state (for example continuation tokens or delta tokens).
+- A cursor represents only the minimum irreducible state required to resume ingestion.
+- Cursor semantics belong to connectors, not to the framework.
+
+14. Pipeline as configuration, not abstraction
+
+- Ingestion workflows are described declaratively in configuration.
+- The framework does not expose Pipeline, Flow, Stage, Asset, Node, or Resource abstractions.
+- Configuration describes how data moves from a Connector, through optional Arrow-preserving transformations, into a Target.
+- Runtime concepts are limited to Connector, Cursor, Arrow Stream, Target, and Merge Strategy.
+- The YAML represents the ingestion pipeline; the framework does not model a pipeline as an independent runtime object.
+
+15. Auditing is out of scope
+
+- The framework is responsible for ingestion, not governance.
+- The framework does not maintain a system of record for load history, lineage, or auditing.
+- Auditing should be derived from destination metadata whenever possible.
+- Lakehouse catalogs, table formats, and governance tools are the preferred location for auditing information.
+- The framework may emit logs, metrics, and load statistics.
+- Operational logging for troubleshooting is allowed, but is not an auditing system.
 
 Vision:
 Describe ingestion, don't implement plumbing.
