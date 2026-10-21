@@ -10,8 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 import pyarrow as pa
 import pytest
 
-from ingester import connectors
-from ingester.connectors import RestConnector
+from ingester.connectors import RestConnector, rest
 
 
 def _json_response(payload: dict[str, Any]) -> BytesIO:
@@ -38,7 +37,7 @@ def mock_json_response(
 ) -> Callable[[dict[str, Any]], None]:
     def set_response(payload: dict[str, Any]) -> None:
         monkeypatch.setattr(
-            connectors,
+            rest,
             "urlopen",
             lambda request: _json_response(payload),
         )
@@ -126,7 +125,7 @@ def test_sends_bearer_token_from_environment(
     monkeypatch.setenv("PRODUCTS_API_TOKEN", "test-token")
     authorization_headers: list[str | None] = []
     monkeypatch.setattr(
-        connectors,
+        rest,
         "urlopen",
         lambda request: (
             authorization_headers.append(request.get_header("Authorization"))
@@ -151,7 +150,7 @@ def test_rejects_missing_bearer_token_before_request(
 ) -> None:
     monkeypatch.delenv("MISSING_API_TOKEN", raising=False)
     monkeypatch.setattr(
-        connectors,
+        rest,
         "urlopen",
         lambda request: pytest.fail("request should not be sent without a bearer token"),
     )
@@ -189,7 +188,7 @@ def test_uses_configured_offset_pagination(
         accept_headers.append(request.get_header("Accept"))
         return _json_response(payloads[int(query["skip"][0])])
 
-    monkeypatch.setattr(connectors, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "urlopen", urlopen)
 
     reader = RestConnector(
         rest_config(
@@ -250,8 +249,8 @@ def test_retries_retryable_http_failures_with_exponential_backoff(
             raise HTTPError(request.full_url, 503, "service unavailable", hdrs=None, fp=None)
         return _json_response({"items": [{"id": 1}]})
 
-    monkeypatch.setattr(connectors, "urlopen", urlopen)
-    monkeypatch.setattr(connectors, "sleep", delays.append)
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "sleep", delays.append)
 
     reader = RestConnector(
         rest_config(
@@ -279,8 +278,8 @@ def test_retries_transport_failures(
             raise URLError("temporary network failure")
         return _json_response({"items": [{"id": 1}]})
 
-    monkeypatch.setattr(connectors, "urlopen", urlopen)
-    monkeypatch.setattr(connectors, "sleep", delays.append)
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "sleep", delays.append)
 
     reader = RestConnector(
         rest_config(
@@ -306,8 +305,8 @@ def test_does_not_retry_non_retryable_http_errors(
         attempts += 1
         raise HTTPError(request.full_url, 401, "unauthorized", hdrs=None, fp=None)
 
-    monkeypatch.setattr(connectors, "urlopen", urlopen)
-    monkeypatch.setattr(connectors, "sleep", delays.append)
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "sleep", delays.append)
 
     with pytest.raises(HTTPError, match="HTTP Error 401: unauthorized"):
         RestConnector(
