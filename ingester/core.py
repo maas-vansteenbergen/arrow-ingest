@@ -9,6 +9,7 @@ import pyarrow as pa
 
 
 class MergeStrategy(StrEnum):
+    APPEND = "append"
     REPLACE = "replace"
 
 

@@ -16,8 +16,8 @@ Implementation roadmap
 - [x] Test suite cleanup
 - [x] DuckDB target
 - [x] Connector and target module cleanup
-- [ ] Append merge strategy (next)
-- [ ] Cursor/incremental state
+- [x] Append merge strategy
+- [ ] Cursor/incremental state (next)
 - [ ] Upsert and SCD2 merge strategies
 
 Completed
@@ -343,3 +343,20 @@ Connector and target module cleanup completed
   selection.
 - Further splitting remains deferred until a concrete implementation gains
   enough independent behavior to warrant it.
+
+Append merge strategy implementation completed
+----------------------------------------------
+- Added `append` alongside `replace` as a supported MergeStrategy.
+- DuckDBTarget appends incoming Arrow streams with `INSERT INTO` when the
+  configured table exists, and creates the table from the stream otherwise.
+- ParquetTarget appends without materializing either dataset: it streams the
+  existing file's batches followed by the incoming batches into a temporary
+  Parquet file, then atomically replaces the destination.
+- Parquet append requires an exactly matching Arrow schema and leaves the
+  existing output intact when the new stream is incompatible.
+- `load()` reports only the number of rows written by the current append,
+  rather than the destination's total number of rows.
+- Added coverage for merge-strategy parsing, Parquet append and schema
+  rejection, and DuckDB append.
+- Not implemented: primary-key-aware upsert, SCD2, destination metadata, or
+  schema evolution.
