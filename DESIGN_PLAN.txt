@@ -1,131 +1,147 @@
-Design Goals
+Design Plan
+===========
 
-1. Arrow is the only data contract
-   - Connectors emit Arrow.
-   - Targets consume Arrow.
-   - No framework-specific data structures.
-   - Minimize conversions and copies.
+Vision
+------
+Describe ingestion, do not require users to implement plumbing.
 
-2. Connector-first model
-   - A connector represents a single external system.
-   - Running a connector produces an Arrow stream/table.
-   - No source/resource distinction.
+The project provides a small, Arrow-native boundary between external systems
+and destinations. It favors explicit configuration, predictable behavior, and
+a deliberately constrained abstraction surface over a general-purpose data
+platform.
 
-Initial supported connector categories
-   - Parquet files. Initial support reads local Parquet files as native Arrow
-     batches.
-   - Flat files, including CSV and JSON Lines.
-   - Databases with ADBC support.
-   - HTTP APIs.
-   - Object storage is a location for file connectors, not a separate connector
-     category.
-   - Out of scope initially: message queues/streams, CDC and replication
-     protocols, spreadsheets, and SDK-only integrations.
+Core contracts
+--------------
 
-3. Declarative by default
-   - Authentication, pagination, incremental loading, rate limits and schema handling should be configurable.
-   - Common ingestion patterns should not require custom Python.
-   - Initial REST pagination support is offset-based, configured by offset and
-     limit parameter names, page size, and a response total path.
-   - Initial REST authentication support is bearer tokens resolved from named
-     environment variables.
-   - Initial REST request customization supports static string headers and query
-     parameters; bearer authentication owns the Authorization header.
-   - Initial REST reliability support provides optional request timeouts,
-     bounded retries for transport failures and 429/5xx responses, and
-     exponential backoff.
-   - Initial schema handling is a strict projection: every declared field must
-     be present with a matching primitive type; undeclared source fields are
-     ignored; null is allowed only for nullable Arrow fields.
+1. Arrow is the data contract
+   - Connectors emit pyarrow.RecordBatchReader streams.
+   - Targets consume those streams.
+   - Framework-specific data structures must not cross the connector-target
+     boundary.
+   - Implementations should minimize conversions, copies, and full-stream
+     materialization.
 
-4. Python as an escape hatch
-   - Custom code is only for genuinely unusual APIs.
-   - If common REST APIs require Python, the abstraction is incomplete.
+2. Connectors represent external systems
+   - A connector represents one external system or file-based input.
+   - The framework has no Source or Resource distinction.
+   - Connector-specific protocol behavior, including cursor semantics, belongs
+     to the connector rather than to a global framework state model.
 
-5. Minimal state
-   - Derive state from the destination whenever possible.
-   - Store only irreducible protocol state (e.g. opaque cursors, delta tokens).
-   - Avoid separate state stores where destination metadata is sufficient.
+3. Targets represent destinations
+   - A target owns destination-specific loading behavior.
+   - Targets expose the same Arrow-stream input contract regardless of the
+     storage system.
+   - Targets return operational load statistics, not framework data models.
 
-6. Arrow-native targets only
-   - Support targets with a strong Arrow story.
-   - Examples: Parquet, DuckDB, Iceberg, Delta, Postgres via ADBC, Snowflake via ADBC.
-   - Reducing scope is a feature.
-   - Initial DuckDB support writes a RecordBatchReader directly into a named
-     table in a local database file. It supports replace only.
+4. Merge strategy is explicit
+   - Every load declares a merge strategy.
+   - The strategy set is append, replace, upsert, and SCD2.
+   - Each target must reject strategies it cannot implement correctly.
+   - State is retained only when required by the selected strategy.
 
-7. Loaders built around ADBC
-   - Prefer standardized Arrow ingestion paths.
-   - Avoid destination-specific loading implementations where possible.
+Declarative configuration
+-------------------------
 
-8. Polars as implementation, not abstraction
-   - Use Polars internally for schema normalization, casting and transformations.
-   - Keep Arrow as the public contract.
+Configuration describes how data moves from a connector, through optional
+Arrow-preserving transformations, into a target. Configuration is not a
+Pipeline runtime abstraction.
 
-9. Transformations are declarative and Arrow-preserving
-   - Transformations operate on Arrow streams through Polars.
-   - Transformations consume Arrow and emit Arrow.
-   - Transformations do not introduce a new framework data model.
-   - Common operations (select, rename, cast, derive, filter) should be declarative.
-   - Complex business logic belongs outside the ingestion framework.
-   - The goal is schema shaping and normalization for loading.
-   - Analytical modelling, aggregations and cross-dataset joins are out of scope.
+- Common HTTP behavior must be configurable: authentication, pagination,
+  request parameters and headers, timeouts, retries, rate limits, and schema
+  handling.
+- The initial HTTP pagination model is offset-based, defined by offset and
+  limit parameter names, page size, and a response total path.
+- The initial HTTP authentication model is bearer tokens resolved from named
+  environment variables. Bearer authentication owns the Authorization header.
+- Request reliability uses optional timeouts, bounded retries for transport
+  failures and retryable HTTP responses, and exponential backoff.
+- Schema handling defaults to strict projection: every declared field must be
+  present with its declared primitive type; undeclared source fields are
+  ignored; null is allowed only for nullable Arrow fields.
+- Custom Python is an escape hatch for genuinely unusual APIs. If a common
+  ingestion pattern requires custom code, the declarative model is incomplete.
 
-10. Orchestration is out of scope
-   - Integrates with Prefect, Dagster, Airflow, Temporal, etc.
-   - The framework is for ingestion, not workflow management.
+Supported scope
+---------------
 
-11. Merge strategies as a first-class concept
-    - append
-    - replace
-    - upsert
-    - scd2
-    - Only retain state required to implement these strategies.
+The initial connector scope includes:
 
-12. Relentlessly small abstraction surface
-    Core concepts:
-      - Connector
-      - Cursor
-      - Arrow Stream
-      - Target
-      - Merge Strategy
+- local Parquet files;
+- flat files, including CSV and JSON Lines;
+- databases with ADBC support; and
+- HTTP APIs.
 
-    Explicitly avoid:
-      - Source
-      - Resource
-      - Pipeline
-      - Asset
-      - Dataset
-      - Block
-      - Flow
+Object storage is a location for file connectors, not a separate connector
+category. Message queues and streams, CDC and replication protocols,
+spreadsheets, and SDK-only integrations are outside the initial scope.
 
-13. Cursor philosophy
+Targets must have a strong Arrow ingestion story. Candidate targets include
+Parquet, DuckDB, Iceberg, Delta, and databases supported through ADBC, such as
+Postgres and Snowflake. Standardized ADBC loading paths are preferred where
+they provide the required destination behavior; destination-specific loading
+is acceptable when necessary.
 
-- State should be derived rather than stored whenever possible.
-- Incremental ingestion should be based on loaded data or on columns derived through the framework's declarative transformation layer.
-- Framework transformations may create timestamps, version markers, hashes, or other values needed to support incremental loading and merge strategies.
-- Derived values are preferred over framework-managed metadata whenever they provide equivalent behavior.
-- The framework must not add hidden ingestion metadata columns to user datasets.
-- Opaque cursor persistence is a last resort for source protocols that expose irreducible state (for example continuation tokens or delta tokens).
-- A cursor represents only the minimum irreducible state required to resume ingestion.
-- Cursor semantics belong to connectors, not to the framework.
+Parquet target layout
+---------------------
 
-14. Pipeline as configuration, not abstraction
+- A single-file Parquet target treats its configured path as one local Parquet
+  file.
+- Single-file writes must publish atomically.
+- Single-file append prioritizes data integrity over write efficiency. Because
+  a Parquet footer finalizes file metadata, append creates a replacement from
+  existing and incoming Arrow batches rather than modifying a file in place.
+- Single-file targets are appropriate for modest datasets and infrequent
+  appends; they are not intended to optimize repeated large appends.
+- A future dataset-directory mode may append immutable Parquet fragments. It
+  requires explicit policies for schema compatibility, publication,
+  concurrency, and compaction.
 
-- Ingestion workflows are described declaratively in configuration.
-- The framework does not expose Pipeline, Flow, Stage, Asset, Node, or Resource abstractions.
-- Configuration describes how data moves from a Connector, through optional Arrow-preserving transformations, into a Target.
-- Runtime concepts are limited to Connector, Cursor, Arrow Stream, Target, and Merge Strategy.
-- The YAML represents the ingestion pipeline; the framework does not model a pipeline as an independent runtime object.
+State and cursors
+-----------------
 
-15. Auditing is out of scope
+- State should be derived from destination data whenever possible.
+- Incremental loading should use loaded data or values derived through
+  declarative transformations.
+- Transformations may create timestamps, version markers, hashes, or similar
+  values required for incremental loading and merge strategies.
+- The framework must not add hidden ingestion metadata columns to user data.
+- Opaque cursor persistence is a last resort for irreducible source-protocol
+  state, such as continuation or delta tokens.
+- A cursor contains only the minimum state required to resume a connector.
 
-- The framework is responsible for ingestion, not governance.
-- The framework does not maintain a system of record for load history, lineage, or auditing.
-- Auditing should be derived from destination metadata whenever possible.
-- Lakehouse catalogs, table formats, and governance tools are the preferred location for auditing information.
-- The framework may emit logs, metrics, and load statistics.
-- Operational logging for troubleshooting is allowed, but is not an auditing system.
+Transformations
+---------------
 
-Vision:
-Describe ingestion, don't implement plumbing.
+- Transformations consume Arrow streams and emit Arrow streams.
+- Polars may be used internally for normalization, casting, and
+  transformations; it is not part of the public data contract.
+- Declarative transformations cover selection, renaming, casting, deriving,
+  and filtering.
+- Complex business logic, analytical modeling, aggregation, and cross-dataset
+  joins are outside the ingestion framework.
+
+Abstraction boundaries
+----------------------
+
+The only runtime concepts are:
+
+- Connector
+- Cursor
+- Arrow stream
+- Target
+- Merge strategy
+
+The framework does not expose Pipeline, Flow, Stage, Source, Resource, Asset,
+Dataset, Block, Node, or registry abstractions. Configuration may describe an
+ingestion workflow, but the framework does not model that workflow as an
+independent runtime object.
+
+Operational boundaries
+----------------------
+
+- Orchestration belongs to systems such as Prefect, Dagster, Airflow, and
+  Temporal, not to this framework.
+- Auditing, lineage, and governance belong in destination metadata, lakehouse
+  catalogs, table formats, and dedicated governance tools.
+- The framework may emit logs, metrics, and load statistics for operational
+  troubleshooting; these are not an auditing system.

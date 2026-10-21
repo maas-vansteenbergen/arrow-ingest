@@ -20,19 +20,31 @@ class DuckDBTarget:
         self._table = _table_name(target)
 
     def load(self, stream: pa.RecordBatchReader, strategy: MergeStrategy) -> int:
-        if strategy is not MergeStrategy.REPLACE:
-            raise ValueError(f"DuckDBTarget does not support merge strategy {strategy!r}.")
-
         connection = duckdb.connect(self._database)
         try:
             connection.register("ingester_stream", stream)
-            connection.execute(
-                f"CREATE OR REPLACE TABLE {_quoted_identifier(self._table)} AS "
-                "SELECT * FROM ingester_stream"
-            )
-            row_count = connection.execute(
-                f"SELECT count(*) FROM {_quoted_identifier(self._table)}"
-            ).fetchone()[0]
+            if strategy is MergeStrategy.REPLACE:
+                connection.execute(
+                    f"CREATE OR REPLACE TABLE {_quoted_identifier(self._table)} AS "
+                    "SELECT * FROM ingester_stream"
+                )
+                row_count = _row_count(connection, self._table)
+            elif strategy is MergeStrategy.APPEND:
+                if _table_exists(connection, self._table):
+                    existing_row_count = _row_count(connection, self._table)
+                    connection.execute(
+                        f"INSERT INTO {_quoted_identifier(self._table)} "
+                        "SELECT * FROM ingester_stream"
+                    )
+                    row_count = _row_count(connection, self._table) - existing_row_count
+                else:
+                    connection.execute(
+                        f"CREATE TABLE {_quoted_identifier(self._table)} AS "
+                        "SELECT * FROM ingester_stream"
+                    )
+                    row_count = _row_count(connection, self._table)
+            else:
+                raise ValueError(f"DuckDBTarget does not support merge strategy {strategy!r}.")
         finally:
             connection.close()
 
@@ -57,3 +69,25 @@ def _table_name(target: Mapping[str, Any]) -> str:
 
 def _quoted_identifier(identifier: str) -> str:
     return f'"{identifier}"'
+
+
+def _table_exists(connection: duckdb.DuckDBPyConnection, table: str) -> bool:
+    return (
+        connection.execute(
+            "SELECT EXISTS ("
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = ?"
+            ")",
+            [table],
+        ).fetchone()[0]
+        is True
+    )
+
+
+def _row_count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
+    row_count = connection.execute(f"SELECT count(*) FROM {_quoted_identifier(table)}").fetchone()[
+        0
+    ]
+    if not isinstance(row_count, int):
+        raise AssertionError("DuckDB row count query did not return an integer.")
+    return row_count
