@@ -14,8 +14,8 @@ Implementation roadmap
   -  development-container review
 - [x] Parquet file connector
 - [x] Test suite cleanup
-- [ ] DuckDB target (next)
-- [ ] Append merge strategy
+- [x] DuckDB target
+- [ ] Append merge strategy (next)
 - [ ] Cursor/incremental state
 - [ ] Upsert and SCD2 merge strategies
 
@@ -313,3 +313,16 @@ Test suite cleanup completed
 - Preserved all 17 behavioral tests and left production code unchanged.
 - Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
   all 17 pytest tests.
+
+DuckDB target implementation completed
+---------------------------------------
+- Added DuckDBTarget, which loads an Arrow RecordBatchReader directly into a
+  named table in a local DuckDB database.
+- Supports `replace` only, using `CREATE OR REPLACE TABLE`; unsupported merge
+  strategies are rejected consistently with ParquetTarget.
+- Validates that `target.path` and `target.table` are non-empty strings, and
+  limits table names to unqualified SQL identifiers before quoting them.
+- Added a focused multi-batch test that confirms all input rows persist in
+  order and that the reported row count is correct.
+- Not implemented: append, upsert, SCD2, schemas/catalogs, ADBC loading, or
+  remote DuckDB connections.

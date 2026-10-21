@@ -1,4 +1,4 @@
-"""Fetch a configured JSON collection as Arrow and write it to Parquet."""
+"""Run a configured Arrow ingestion."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ import yaml
 
 from ingester.connectors import ParquetConnector, RestConnector
 from ingester.core import Connector, Target, parse_merge_strategy
-from ingester.targets import ParquetTarget
+from ingester.targets import DuckDBTarget, ParquetTarget
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a minimal Arrow-to-Parquet ingestion.")
+    parser = argparse.ArgumentParser(description="Run a minimal Arrow ingestion.")
     parser.add_argument(
         "config", nargs="?", default="connector.yaml", help="Path to the connector YAML."
     )
@@ -28,7 +28,7 @@ def main() -> None:
     strategy = parse_merge_strategy(config["merge"])
 
     connector = _connector_from_config(connector_config)
-    destination: Target = ParquetTarget(target)
+    destination = _target_from_config(target)
     stream = connector.read()
     row_count = destination.load(stream, strategy)
     print(f"Wrote {row_count} rows with {len(stream.schema)} columns to {target['path']}")
@@ -41,6 +41,15 @@ def _connector_from_config(config: Mapping[str, Any]) -> Connector:
     if connector_type == "parquet":
         return ParquetConnector(config)
     raise ValueError("connector.type must be 'rest' or 'parquet'.")
+
+
+def _target_from_config(config: Mapping[str, Any]) -> Target:
+    target_type = config.get("type")
+    if target_type == "parquet":
+        return ParquetTarget(config)
+    if target_type == "duckdb":
+        return DuckDBTarget(config)
+    raise ValueError("target.type must be 'parquet' or 'duckdb'.")
 
 
 if __name__ == "__main__":

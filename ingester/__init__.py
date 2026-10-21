@@ -2,10 +2,11 @@
 
 from .connectors import ParquetConnector, RestConnector
 from .core import Connector, MergeStrategy, Target
-from .targets import ParquetTarget
+from .targets import DuckDBTarget, ParquetTarget
 
 __all__ = [
     "Connector",
+    "DuckDBTarget",
     "MergeStrategy",
     "ParquetConnector",
     "ParquetTarget",
