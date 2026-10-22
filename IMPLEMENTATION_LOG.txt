@@ -95,7 +95,7 @@ Next roadmap: hardening and demo readiness
 
 - [x] Cross-project cleanup and refactoring
 - [x] Public documentation
-- [ ] Add an open-source license
+- [x] Add an MIT open-source license
 - [ ] Add visible GitHub Actions CI status reporting
 - [ ] Coverage measurement and CI reporting
 - [ ] Add a README architecture diagram for the Arrow stream boundary
