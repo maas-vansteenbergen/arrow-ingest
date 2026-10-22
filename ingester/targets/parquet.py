@@ -12,8 +12,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from ..core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
-from ._scd2 import apply_scd2
+from ..core import Cursor, MergeConfiguration, MergeStrategy
+from ._scd2 import apply_scd2, scd2_configuration
 from ._upsert import key_match_condition, validate_incoming_keys, validate_key_fields
 
 
@@ -159,7 +159,7 @@ class ParquetTarget:
                     "ingester_destination",
                     stream.schema,
                     merge.keys,
-                    _scd2_configuration(merge),
+                    scd2_configuration(merge),
                 )
                 connection.execute(
                     f"COPY ingester_destination TO {_sql_string(output_destination)} "
@@ -192,9 +192,3 @@ def _temporary_path(directory: Path) -> Path:
 
 def _sql_string(value: Path) -> str:
     return "'" + str(value).replace("'", "''") + "'"
-
-
-def _scd2_configuration(merge: MergeConfiguration) -> SCD2Configuration:
-    if merge.scd2 is None:
-        raise AssertionError("SCD2 merge configuration is missing SCD2 settings.")
-    return merge.scd2
