@@ -85,7 +85,6 @@ Important constraints and deferred behavior
   deletion/tombstone semantics, schema evolution, source-order repair, or
   opaque cursors.
 
-
 Next roadmap: hardening and demo readiness
 -------------------------------------------
 
@@ -100,6 +99,7 @@ Next roadmap: hardening and demo readiness
 - [ ] Dependabot and dependency/workflow hygiene
 - [ ] Essential security tooling
 - [ ] Thorough security risk scan and remediation
+- [ ] Add a CONTRIBUTING.md
 
 Documentation and typing update
 -------------------------------
