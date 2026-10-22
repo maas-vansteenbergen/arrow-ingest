@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import duckdb
 import pyarrow as pa
+import pytest
 
-from ingester.core import Cursor, MergeStrategy
+from ingester.core import Cursor, MergeConfiguration, MergeStrategy
 from ingester.targets import DuckDBTarget
 
 
@@ -20,7 +21,7 @@ def test_persists_multiple_arrow_batches(tmp_path) -> None:
 
     row_count = DuckDBTarget({"path": str(database), "table": "products"}).load(
         reader,
-        MergeStrategy.REPLACE,
+        MergeConfiguration(MergeStrategy.REPLACE),
     )
 
     with duckdb.connect(str(database)) as connection:
@@ -43,7 +44,7 @@ def test_appends_arrow_batches_to_existing_table(tmp_path) -> None:
 
     row_count = DuckDBTarget({"path": str(database), "table": "products"}).load(
         reader,
-        MergeStrategy.APPEND,
+        MergeConfiguration(MergeStrategy.APPEND),
     )
 
     with duckdb.connect(str(database)) as connection:
@@ -62,3 +63,96 @@ def test_reads_high_watermark_cursor_from_existing_table(tmp_path) -> None:
     cursor = DuckDBTarget({"path": str(database), "table": "products"}).read_cursor("id")
 
     assert cursor == Cursor(field="id", value=4)
+
+
+def test_upserts_arrow_batches_by_key(tmp_path) -> None:
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
+    database = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.execute("CREATE TABLE products (id BIGINT, title VARCHAR)")
+        connection.execute("INSERT INTO products VALUES (1, 'one'), (2, 'two')")
+    reader = pa.RecordBatchReader.from_batches(
+        schema,
+        [pa.RecordBatch.from_pydict({"id": [2, 3], "title": ["updated", "three"]})],
+    )
+
+    row_count = DuckDBTarget({"path": str(database), "table": "products"}).load(
+        reader,
+        MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
+    )
+
+    with duckdb.connect(str(database)) as connection:
+        rows = connection.execute("SELECT id, title FROM products ORDER BY id").fetchall()
+
+    assert row_count == 2
+    assert rows == [(1, "one"), (2, "updated"), (3, "three")]
+
+
+def test_rejects_upsert_with_null_keys(tmp_path) -> None:
+    schema = pa.schema([pa.field("id", pa.int64())])
+    reader = pa.RecordBatchReader.from_batches(
+        schema,
+        [pa.RecordBatch.from_pydict({"id": [None]}, schema=schema)],
+    )
+
+    with pytest.raises(ValueError, match="Incoming upsert keys must not be null."):
+        DuckDBTarget({"path": str(tmp_path / "warehouse.duckdb"), "table": "products"}).load(
+            reader,
+            MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
+        )
+
+
+def test_upserts_by_composite_key(tmp_path) -> None:
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("version", pa.int64()),
+            pa.field("title", pa.string()),
+        ]
+    )
+    database = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.execute("CREATE TABLE products (id BIGINT, version BIGINT, title VARCHAR)")
+        connection.execute("INSERT INTO products VALUES (1, 1, 'old'), (1, 2, 'current')")
+    reader = pa.RecordBatchReader.from_batches(
+        schema,
+        [
+            pa.RecordBatch.from_pydict(
+                {"id": [1, 2], "version": [2, 1], "title": ["updated", "new"]},
+                schema=schema,
+            )
+        ],
+    )
+
+    DuckDBTarget({"path": str(database), "table": "products"}).load(
+        reader,
+        MergeConfiguration(MergeStrategy.UPSERT, ("id", "version")),
+    )
+
+    with duckdb.connect(str(database)) as connection:
+        rows = connection.execute(
+            "SELECT id, version, title FROM products ORDER BY id, version"
+        ).fetchall()
+
+    assert rows == [(1, 1, "old"), (1, 2, "updated"), (2, 1, "new")]
+
+
+def test_rejects_upsert_with_a_different_schema(tmp_path) -> None:
+    database = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.execute("CREATE TABLE products (id BIGINT)")
+        connection.execute("INSERT INTO products VALUES (1)")
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
+    reader = pa.RecordBatchReader.from_batches(
+        schema,
+        [pa.RecordBatch.from_pydict({"id": [1], "title": ["updated"]}, schema=schema)],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot upsert an Arrow stream with a different schema to DuckDB output.",
+    ):
+        DuckDBTarget({"path": str(database), "table": "products"}).load(
+            reader,
+            MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
+        )

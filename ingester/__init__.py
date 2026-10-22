@@ -1,12 +1,13 @@
 """Arrow-native ingestion primitives."""
 
 from .connectors import ParquetConnector, RestConnector
-from .core import Connector, Cursor, MergeStrategy, Target
+from .core import Connector, Cursor, MergeConfiguration, MergeStrategy, Target
 from .targets import DuckDBTarget, ParquetTarget
 
 __all__ = [
     "Connector",
     "Cursor",
+    "MergeConfiguration",
     "DuckDBTarget",
     "MergeStrategy",
     "ParquetConnector",

@@ -10,7 +10,13 @@ from typing import Any
 import yaml
 
 from ingester.connectors import ParquetConnector, RestConnector
-from ingester.core import Connector, Cursor, MergeStrategy, Target, parse_merge_strategy
+from ingester.core import (
+    Connector,
+    Cursor,
+    MergeStrategy,
+    Target,
+    parse_merge_configuration,
+)
 from ingester.targets import DuckDBTarget, ParquetTarget
 
 
@@ -25,13 +31,13 @@ def main() -> None:
         config = yaml.safe_load(config_file)
     connector_config = config["connector"]
     target = config["target"]
-    strategy = parse_merge_strategy(config["merge"])
+    merge = parse_merge_configuration(config["merge"])
 
     connector = _connector_from_config(connector_config)
     destination = _target_from_config(target)
-    cursor = _cursor_from_destination(connector, destination, strategy)
+    cursor = _cursor_from_destination(connector, destination, merge.strategy)
     stream = connector.read(cursor)
-    row_count = destination.load(stream, strategy)
+    row_count = destination.load(stream, merge)
     print(f"Wrote {row_count} rows with {len(stream.schema)} columns to {target['path']}")
 
 
@@ -61,8 +67,10 @@ def _cursor_from_destination(
     field = connector.destination_cursor_field()
     if field is None:
         return None
-    if strategy is not MergeStrategy.APPEND:
-        raise ValueError("A destination-derived cursor requires merge strategy 'append'.")
+    if strategy not in (MergeStrategy.APPEND, MergeStrategy.UPSERT):
+        raise ValueError(
+            "A destination-derived cursor requires merge strategy 'append' or 'upsert'."
+        )
     return destination.read_cursor(field)
 
 
