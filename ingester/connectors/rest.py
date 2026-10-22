@@ -16,13 +16,13 @@ import pyarrow as pa
 
 from ..core import Cursor
 
-ARROW_TYPES = {
+ARROW_TYPES: dict[str, pa.DataType] = {
     "int64": pa.int64(),
     "float64": pa.float64(),
     "string": pa.string(),
     "bool": pa.bool_(),
 }
-ROWS_PER_BATCH = 1_000
+ROWS_PER_BATCH: int = 1_000
 
 
 @dataclass(frozen=True)
@@ -46,17 +46,45 @@ class _HighWatermarkCursorConfiguration:
 
 
 class RestConnector:
-    """Fetch a JSON collection from a configured REST endpoint."""
+    """Fetch a JSON collection from a configured REST endpoint.
+
+    Args:
+        connector: REST connector configuration, including the endpoint, record
+            path, and Arrow schema.
+    """
 
     def __init__(self, connector: Mapping[str, Any]) -> None:
         self._connector = connector
 
     def destination_cursor_field(self) -> str | None:
+        """Return the configured destination-derived cursor field.
+
+        Returns:
+            The high-watermark field, or ``None`` when no cursor is configured.
+
+        Raises:
+            ValueError: If the configured schema or cursor is invalid.
+        """
         schema = _schema(self._connector["schema"])
         cursor = _high_watermark_cursor(self._connector.get("cursor"), schema)
         return cursor.field if cursor is not None else None
 
     def read(self, cursor: Cursor | None = None) -> pa.RecordBatchReader:
+        """Fetch records and expose them as an Arrow stream.
+
+        Args:
+            cursor: The destination-derived high-watermark position, when
+                configured.
+
+        Returns:
+            A reader over validated Arrow record batches.
+
+        Raises:
+            ValueError: If connector configuration, cursor data, payload data,
+                or pagination data is invalid.
+            HTTPError: If a non-retryable HTTP response is received.
+            URLError: If a request fails after the configured retries.
+        """
         schema = _schema(self._connector["schema"])
         cursor_configuration = _high_watermark_cursor(self._connector.get("cursor"), schema)
         _validate_cursor(cursor, cursor_configuration)

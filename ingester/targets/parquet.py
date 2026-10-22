@@ -12,18 +12,34 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from ..core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
-from ._scd2 import apply_scd2
+from ..core import Cursor, MergeConfiguration, MergeStrategy
+from ._scd2 import apply_scd2, scd2_configuration
 from ._upsert import key_match_condition, validate_incoming_keys, validate_key_fields
 
 
 class ParquetTarget:
-    """Write an Arrow stream to a Parquet file."""
+    """Write an Arrow stream to a single local Parquet file.
+
+    Args:
+        target: Target configuration containing the destination ``path``.
+    """
 
     def __init__(self, target: Mapping[str, Any]) -> None:
         self._destination = Path(target["path"])
 
     def read_cursor(self, field: str) -> Cursor | None:
+        """Read the largest persisted integer value for a Parquet field.
+
+        Args:
+            field: The Parquet field from which to derive a high-watermark.
+
+        Returns:
+            The current high-watermark, or ``None`` when the file is absent or
+            contains no values.
+
+        Raises:
+            ValueError: If the field is absent or is not an int64 field.
+        """
         if not self._destination.exists():
             return None
 
@@ -42,6 +58,19 @@ class ParquetTarget:
         return Cursor(field, value) if value is not None else None
 
     def load(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
+        """Load an Arrow stream into the configured Parquet file.
+
+        Args:
+            stream: The incoming Arrow record batches.
+            merge: The merge strategy and its validated settings.
+
+        Returns:
+            The number of incoming rows written to the file.
+
+        Raises:
+            ValueError: If the merge strategy, input keys, or schemas are
+                incompatible with the destination.
+        """
         self._destination.parent.mkdir(parents=True, exist_ok=True)
         if merge.strategy is MergeStrategy.REPLACE:
             return self._replace_stream(stream)
@@ -159,7 +188,7 @@ class ParquetTarget:
                     "ingester_destination",
                     stream.schema,
                     merge.keys,
-                    _scd2_configuration(merge),
+                    scd2_configuration(merge),
                 )
                 connection.execute(
                     f"COPY ingester_destination TO {_sql_string(output_destination)} "
@@ -192,9 +221,3 @@ def _temporary_path(directory: Path) -> Path:
 
 def _sql_string(value: Path) -> str:
     return "'" + str(value).replace("'", "''") + "'"
-
-
-def _scd2_configuration(merge: MergeConfiguration) -> SCD2Configuration:
-    if merge.scd2 is None:
-        raise AssertionError("SCD2 merge configuration is missing SCD2 settings.")
-    return merge.scd2

@@ -65,6 +65,8 @@ Pipeline runtime abstraction.
   handling.
 - The initial HTTP pagination model is offset-based, defined by offset and
   limit parameter names, page size, and a response total path.
+- `connector.auth` owns the Authorization header, preventing configured
+  headers from overriding credential-derived authentication.
 - The initial HTTP authentication model is bearer tokens resolved from named
   environment variables. Bearer authentication owns the Authorization header.
 - Authentication configuration contains credential references, never plaintext
@@ -94,12 +96,16 @@ Pipeline runtime abstraction.
 Supported scope
 ---------------
 
-The initial connector scope includes:
+The planned connector scope includes:
 
 - local Parquet files;
 - flat files, including CSV and JSON Lines;
 - databases with ADBC support; and
 - HTTP APIs.
+
+The implemented connector scope is deliberately smaller: local Parquet files
+and configured HTTP JSON collection endpoints. CSV, JSON Lines, and ADBC
+connectors remain planned work rather than alternate internal data paths.
 
 Object storage is a location for file connectors, not a separate connector
 category. Message queues and streams, CDC and replication protocols,
@@ -132,8 +138,8 @@ State and cursors
 - State should be derived from destination data whenever possible.
 - Incremental loading should use loaded data or values derived through
   declarative transformations.
-- Transformations may create timestamps, version markers, hashes, or similar
-  values required for incremental loading and merge strategies.
+- Future transformations may create timestamps, version markers, hashes, or
+  similar values required for incremental loading and merge strategies.
 - The framework must not add hidden ingestion metadata columns to user data.
 - Cursor is a first-class runtime concept with three distinct concerns:
   definition, position, and resolution.
@@ -147,7 +153,7 @@ State and cursors
     derived.
 - Connectors own cursor semantics. Targets provide the minimum destination
   query capability needed to derive configured cursor positions.
-- The framework supports two cursor modes:
+- The design supports two cursor modes:
   - A destination-derived watermark is an ordered field tuple read from
     destination data. Connectors bind its values to source request parameters.
     Watermarks may use numeric or timestamp-like values.
@@ -162,6 +168,9 @@ State and cursors
   tie-breaker or an explicit overlap-and-deduplication policy.
 - Cursor support must not introduce a Pipeline, StateManager, or CursorManager
   runtime abstraction.
+- The implemented cursor primitive is narrower: a destination-derived `int64`
+  high watermark bound to an HTTP request parameter. Tuple, timestamp-like,
+  lookback, and opaque cursor positions remain future design work.
 
 Transformations
 ---------------
@@ -169,8 +178,8 @@ Transformations
 - Transformations consume Arrow streams and emit Arrow streams.
 - Polars may be used internally for normalization, casting, and
   transformations; it is not part of the public data contract.
-- Declarative transformations cover selection, renaming, casting, deriving,
-  and filtering.
+- Declarative transformations will cover selection, renaming, casting,
+  deriving, and filtering; none are implemented yet.
 - Complex business logic, analytical modeling, aggregation, and cross-dataset
   joins are outside the ingestion framework.
 

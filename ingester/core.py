@@ -11,6 +11,8 @@ import pyarrow as pa
 
 
 class MergeStrategy(StrEnum):
+    """Select how a target incorporates an incoming Arrow stream."""
+
     APPEND = "append"
     REPLACE = "replace"
     SCD2 = "scd2"
@@ -19,7 +21,12 @@ class MergeStrategy(StrEnum):
 
 @dataclass(frozen=True)
 class Cursor:
-    """A destination-derived position for incremental connector reads."""
+    """Represent a destination-derived position for incremental connector reads.
+
+    Attributes:
+        field: The source field used to order records.
+        value: The last loaded value for the field.
+    """
 
     field: str
     value: int
@@ -27,7 +34,17 @@ class Cursor:
 
 @dataclass(frozen=True)
 class MergeConfiguration:
-    """The strategy and key fields that define a target load."""
+    """Define the strategy and fields that control a target load.
+
+    Attributes:
+        strategy: The operation used to merge incoming records.
+        keys: Fields that uniquely identify records for upsert and SCD2 loads.
+        scd2: Versioning settings required for SCD2 loads.
+
+    Raises:
+        ValueError: If the settings are incompatible with the selected strategy
+            or contain invalid or duplicate field names.
+    """
 
     strategy: MergeStrategy
     keys: tuple[str, ...] = ()
@@ -56,7 +73,18 @@ class MergeConfiguration:
 
 @dataclass(frozen=True)
 class SCD2Configuration:
-    """The source fields and output columns that define SCD2 history."""
+    """Define the source fields and output columns for SCD2 history.
+
+    Attributes:
+        tracked_fields: Source fields whose changes create a new version.
+        effective_at: Source field that orders versions.
+        valid_from: Output field that stores the version start.
+        valid_to: Output field that stores the version end.
+        is_current: Output field that identifies the current version.
+
+    Raises:
+        ValueError: If fields are missing, empty, duplicated, or conflict.
+    """
 
     tracked_fields: tuple[str, ...]
     effective_at: str
@@ -82,23 +110,60 @@ class Connector(Protocol):
     """An external system that emits an Arrow stream."""
 
     def destination_cursor_field(self) -> str | None:
-        """Return the destination field used to derive this connector's cursor."""
+        """Return the destination field used to derive this connector's cursor.
+
+        Returns:
+            The configured cursor field, or ``None`` when no cursor is configured.
+        """
 
     def read(self, cursor: Cursor | None = None) -> pa.RecordBatchReader:
-        """Return the connector's records as an Arrow stream."""
+        """Return the connector's records as an Arrow stream.
+
+        Args:
+            cursor: The previously loaded position to use for incremental reads.
+
+        Returns:
+            A reader that yields the connector's Arrow record batches.
+        """
 
 
 class Target(Protocol):
     """A destination that consumes an Arrow stream."""
 
     def read_cursor(self, field: str) -> Cursor | None:
-        """Return the maximum persisted integer value for a destination field."""
+        """Return the maximum persisted integer value for a destination field.
+
+        Args:
+            field: The destination field to inspect.
+
+        Returns:
+            The persisted high-watermark cursor, or ``None`` when unavailable.
+        """
 
     def load(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
-        """Load an Arrow stream and return the number of written rows."""
+        """Load an Arrow stream and return the number of written rows.
+
+        Args:
+            stream: The incoming Arrow record batches.
+            merge: The strategy and settings for incorporating the batches.
+
+        Returns:
+            The number of rows written from the incoming stream.
+        """
 
 
 def parse_merge_strategy(value: str) -> MergeStrategy:
+    """Parse a configured merge strategy.
+
+    Args:
+        value: The configured strategy name.
+
+    Returns:
+        The corresponding merge strategy.
+
+    Raises:
+        ValueError: If the strategy name is unsupported.
+    """
     try:
         return MergeStrategy(value)
     except ValueError as error:
@@ -109,6 +174,18 @@ def parse_merge_strategy(value: str) -> MergeStrategy:
 
 
 def parse_merge_configuration(value: Any) -> MergeConfiguration:
+    """Parse a merge configuration from YAML-compatible data.
+
+    Args:
+        value: A strategy name or mapping containing strategy-specific settings.
+
+    Returns:
+        A validated merge configuration.
+
+    Raises:
+        ValueError: If the configuration is malformed or incompatible with its
+            selected strategy.
+    """
     if isinstance(value, str):
         strategy = parse_merge_strategy(value)
         if strategy is MergeStrategy.UPSERT:

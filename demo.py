@@ -23,7 +23,7 @@ from ingester.targets import DuckDBTarget, ParquetTarget
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a minimal Arrow ingestion.")
     parser.add_argument(
-        "config", nargs="?", default="connector.yaml", help="Path to the connector YAML."
+        "config", nargs="?", default="pipeline.yaml", help="Path to the pipeline YAML."
     )
     args = parser.parse_args()
 
