@@ -14,16 +14,15 @@ The project currently supports:
 
 ```mermaid
 flowchart LR
-    Config["Declarative configuration<br/>connector, target, and merge strategy"]
-    Connector["Connector"]
-    Stream["pyarrow.RecordBatchReader"]
-    Target["Target<br/>applies the explicit merge strategy"]
+    Connector["Connector<br/>Reads from an external system"]
+    Stream["Arrow stream<br/>pyarrow.RecordBatchReader"]
+    Target["Target<br/>Writes to a destination using a merge strategy"]
 
-    Config --> Connector
     Connector --> Stream
     Stream --> Target
-    Target -. "optional destination-derived cursor" .-> Connector
 ```
+
+The Arrow stream is the only data contract between connectors and targets.
 
 ## Install
 
