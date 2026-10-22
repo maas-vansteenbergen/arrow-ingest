@@ -86,6 +86,7 @@ Validation baseline
 -------------------
 
 - The latest full suite passed: 51 pytest tests.
+- The latest branch-coverage run measured 81% total coverage.
 - Repository checks passed: `uv run ruff check .` and `git diff --check`.
 - Tests cover connector configuration and retry behavior, native Parquet
   streaming, target batching, all implemented merge strategies, cursor
@@ -97,14 +98,15 @@ Next roadmap: hardening and demo readiness
 - [x] Cross-project cleanup and refactoring
 - [x] Public documentation
 - [x] Add MIT open-source license
-- [ ] Add visible GitHub Actions CI status reporting
-- [ ] Coverage measurement and CI reporting
+- [x] Add visible GitHub Actions CI status reporting
+- [x] Coverage measurement and CI reporting
 - [ ] Add a README architecture diagram for the Arrow stream boundary
 - [ ] Add a README "Why this exists" section explaining the minimal,
   Arrow-native design
 - [ ] Dependabot and dependency/workflow hygiene
 - [ ] Essential security tooling
 - [ ] Thorough security risk scan and remediation
+- [ ] Add a CONTRIBUTING.md
 
 Documentation and typing update
 -------------------------------
