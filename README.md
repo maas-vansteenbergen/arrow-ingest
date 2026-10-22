@@ -14,35 +14,15 @@ The project currently supports:
 
 ```mermaid
 flowchart LR
-    Config["pipeline.yaml"] --> CLI["demo.py"]
-    CLI --> Connector
-    CLI --> Merge["Merge configuration<br/>replace | append | upsert | SCD2"]
-    CLI --> Target
+    Config["Declarative configuration<br/>connector, target, and merge strategy"]
+    Connector["Connector"]
+    Stream["pyarrow.RecordBatchReader"]
+    Target["Target<br/>applies the explicit merge strategy"]
 
-    subgraph Sources
-        REST["REST JSON"]
-        ParquetSource["Parquet file"]
-    end
-
-    subgraph Arrow["Arrow-native stream"]
-        Connector["Connector<br/>RestConnector | ParquetConnector"]
-        Stream["pyarrow.RecordBatchReader"]
-    end
-
-    subgraph Destinations
-        Target["Target<br/>DuckDBTarget | ParquetTarget"]
-        DuckDB["DuckDB table"]
-        ParquetTarget["Parquet file"]
-    end
-
-    REST --> Connector
-    ParquetSource --> Connector
+    Config --> Connector
     Connector --> Stream
     Stream --> Target
-    Merge --> Target
-    Target --> DuckDB
-    Target --> ParquetTarget
-    Target -. "high-watermark cursor" .-> Connector
+    Target -. "optional destination-derived cursor" .-> Connector
 ```
 
 ## Install
