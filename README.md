@@ -10,6 +10,41 @@ The project currently supports:
 - local Parquet files and DuckDB tables as targets; and
 - replace, append, upsert, and SCD2 merge strategies.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Config["pipeline.yaml"] --> CLI["demo.py"]
+    CLI --> Connector
+    CLI --> Merge["Merge configuration<br/>replace | append | upsert | SCD2"]
+    CLI --> Target
+
+    subgraph Sources
+        REST["REST JSON"]
+        ParquetSource["Parquet file"]
+    end
+
+    subgraph Arrow["Arrow-native stream"]
+        Connector["Connector<br/>RestConnector | ParquetConnector"]
+        Stream["pyarrow.RecordBatchReader"]
+    end
+
+    subgraph Destinations
+        Target["Target<br/>DuckDBTarget | ParquetTarget"]
+        DuckDB["DuckDB table"]
+        ParquetTarget["Parquet file"]
+    end
+
+    REST --> Connector
+    ParquetSource --> Connector
+    Connector --> Stream
+    Stream --> Target
+    Merge --> Target
+    Target --> DuckDB
+    Target --> ParquetTarget
+    Target -. "high-watermark cursor" .-> Connector
+```
+
 ## Install
 
 The project requires Python 3.12 or later.
