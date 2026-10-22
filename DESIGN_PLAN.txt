@@ -121,12 +121,33 @@ State and cursors
 - Transformations may create timestamps, version markers, hashes, or similar
   values required for incremental loading and merge strategies.
 - The framework must not add hidden ingestion metadata columns to user data.
-- Opaque cursor persistence is a last resort for irreducible source-protocol
-  state, such as continuation or delta tokens.
-- A cursor contains only the minimum state required to resume a connector.
-- The initial cursor mode is a destination-derived high watermark for a
-  strictly increasing integer field. The connector passes that value through
-  its configured source request parameter and uses append semantics.
+- Cursor is a first-class runtime concept with three distinct concerns:
+  definition, position, and resolution.
+  - A cursor definition declares the ordered source field or fields, comparison
+    semantics, source request binding, optional initial boundary, and lookback
+    policy.
+  - A cursor position contains only the resolved progress values needed to
+    resume a connector.
+  - Cursor resolution obtains a position from destination data where possible,
+    or from persisted source-protocol state only when that position cannot be
+    derived.
+- Connectors own cursor semantics. Targets provide the minimum destination
+  query capability needed to derive configured cursor positions.
+- The framework supports two cursor modes:
+  - A destination-derived watermark is an ordered field tuple read from
+    destination data. Connectors bind its values to source request parameters.
+    Watermarks may use numeric or timestamp-like values.
+  - An opaque source cursor is a source-defined continuation or delta token.
+    It is persisted only when a source cannot be resumed from destination
+    data.
+- Cursor positions are resolved before a connector reads and advance only
+  after the destination load succeeds. Failed or partial loads must not
+  advance cursor state.
+- A scalar watermark is correct only when it is strictly increasing and
+  unique. Sources that can emit tied values require a lexicographically ordered
+  tie-breaker or an explicit overlap-and-deduplication policy.
+- Cursor support must not introduce a Pipeline, StateManager, or CursorManager
+  runtime abstraction.
 
 Transformations
 ---------------
