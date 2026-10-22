@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from ..core import MergeStrategy
+from ..core import Cursor, MergeStrategy
 
 
 class ParquetTarget:
@@ -18,6 +19,24 @@ class ParquetTarget:
 
     def __init__(self, target: Mapping[str, Any]) -> None:
         self._destination = Path(target["path"])
+
+    def read_cursor(self, field: str) -> Cursor | None:
+        if not self._destination.exists():
+            return None
+
+        parquet_file = pq.ParquetFile(self._destination)
+        field_index = parquet_file.schema_arrow.get_field_index(field)
+        if field_index == -1:
+            raise ValueError(f"Cursor field {field!r} does not exist in the Parquet output.")
+        if parquet_file.schema_arrow.field(field_index).type != pa.int64():
+            raise ValueError(f"Cursor field {field!r} in the Parquet output must be int64.")
+
+        value: int | None = None
+        for batch in parquet_file.iter_batches(columns=[field]):
+            batch_maximum = pc.max(batch.column(0)).as_py()
+            if batch_maximum is not None and (value is None or batch_maximum > value):
+                value = batch_maximum
+        return Cursor(field, value) if value is not None else None
 
     def load(self, stream: pa.RecordBatchReader, strategy: MergeStrategy) -> int:
         self._destination.parent.mkdir(parents=True, exist_ok=True)

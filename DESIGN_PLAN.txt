@@ -124,6 +124,9 @@ State and cursors
 - Opaque cursor persistence is a last resort for irreducible source-protocol
   state, such as continuation or delta tokens.
 - A cursor contains only the minimum state required to resume a connector.
+- The initial cursor mode is a destination-derived high watermark for a
+  strictly increasing integer field. The connector passes that value through
+  its configured source request parameter and uses append semantics.
 
 Transformations
 ---------------

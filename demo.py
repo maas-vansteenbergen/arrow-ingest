@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from ingester.connectors import ParquetConnector, RestConnector
-from ingester.core import Connector, Target, parse_merge_strategy
+from ingester.core import Connector, Cursor, MergeStrategy, Target, parse_merge_strategy
 from ingester.targets import DuckDBTarget, ParquetTarget
 
 
@@ -29,7 +29,8 @@ def main() -> None:
 
     connector = _connector_from_config(connector_config)
     destination = _target_from_config(target)
-    stream = connector.read()
+    cursor = _cursor_from_destination(connector, destination, strategy)
+    stream = connector.read(cursor)
     row_count = destination.load(stream, strategy)
     print(f"Wrote {row_count} rows with {len(stream.schema)} columns to {target['path']}")
 
@@ -50,6 +51,19 @@ def _target_from_config(config: Mapping[str, Any]) -> Target:
     if target_type == "duckdb":
         return DuckDBTarget(config)
     raise ValueError("target.type must be 'parquet' or 'duckdb'.")
+
+
+def _cursor_from_destination(
+    connector: Connector,
+    destination: Target,
+    strategy: MergeStrategy,
+) -> Cursor | None:
+    field = connector.destination_cursor_field()
+    if field is None:
+        return None
+    if strategy is not MergeStrategy.APPEND:
+        raise ValueError("A destination-derived cursor requires merge strategy 'append'.")
+    return destination.read_cursor(field)
 
 
 if __name__ == "__main__":

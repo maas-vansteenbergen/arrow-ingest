@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from demo import _connector_from_config, _target_from_config
+from demo import _connector_from_config, _cursor_from_destination, _target_from_config
 from ingester.connectors import ParquetConnector, RestConnector
+from ingester.core import MergeStrategy
 from ingester.targets import DuckDBTarget, ParquetTarget
 
 
@@ -37,3 +38,43 @@ def test_rejects_unknown_connector_type() -> None:
 def test_rejects_unknown_target_type() -> None:
     with pytest.raises(ValueError, match=r"target.type must be 'parquet' or 'duckdb'."):
         _target_from_config({"type": "sqlite"})
+
+
+def test_derives_cursor_from_destination_for_append(tmp_path) -> None:
+    connector = RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "cursor": {
+                "type": "high_watermark",
+                "field": "id",
+                "request_param": "after_id",
+            },
+        }
+    )
+    destination = DuckDBTarget({"path": str(tmp_path / "warehouse.duckdb"), "table": "items"})
+
+    assert _cursor_from_destination(connector, destination, MergeStrategy.APPEND) is None
+
+
+def test_rejects_destination_cursor_without_append() -> None:
+    connector = RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "cursor": {
+                "type": "high_watermark",
+                "field": "id",
+                "request_param": "after_id",
+            },
+        }
+    )
+    destination = DuckDBTarget({"path": ":memory:", "table": "items"})
+
+    with pytest.raises(
+        ValueError,
+        match="A destination-derived cursor requires merge strategy 'append'.",
+    ):
+        _cursor_from_destination(connector, destination, MergeStrategy.REPLACE)

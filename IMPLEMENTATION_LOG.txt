@@ -17,7 +17,7 @@ Implementation roadmap
 - [x] DuckDB target
 - [x] Connector and target module cleanup
 - [x] Append merge strategy
-- [ ] Cursor/incremental state (next)
+- [x] Cursor/incremental state
 - [ ] Upsert and SCD2 merge strategies
 
 Completed
@@ -360,3 +360,20 @@ Append merge strategy implementation completed
   rejection, and DuckDB append.
 - Not implemented: primary-key-aware upsert, SCD2, destination metadata, or
   schema evolution.
+
+Destination-derived cursor implementation completed
+---------------------------------------------------
+- Added Cursor as the small runtime value carrying an integer destination
+  field and its maximum persisted value.
+- Added the first REST incremental mode: `cursor.type: high_watermark`, with
+  a declared `int64` schema field and a source request parameter.
+- Before a configured append load, the CLI asks the target for the maximum
+  persisted cursor value. REST sends that value only when one exists, so the
+  first load remains unfiltered.
+- ParquetTarget derives the value by scanning the configured output column;
+  DuckDBTarget derives it with `max()` from the configured table.
+- Restricted this cursor mode to append loads. It does not introduce a state
+  store, hidden metadata columns, opaque cursor persistence, timestamps,
+  compound cursors, lookback windows, or duplicate handling for tied values.
+- Added coverage for REST cursor parameters and validation, both target
+  implementations, first-run behavior, and the append-only requirement.

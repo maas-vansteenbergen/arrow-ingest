@@ -9,7 +9,7 @@ from typing import Any
 import duckdb
 import pyarrow as pa
 
-from ..core import MergeStrategy
+from ..core import Cursor, MergeStrategy
 
 
 class DuckDBTarget:
@@ -18,6 +18,24 @@ class DuckDBTarget:
     def __init__(self, target: Mapping[str, Any]) -> None:
         self._database = _required_string(target, "path")
         self._table = _table_name(target)
+
+    def read_cursor(self, field: str) -> Cursor | None:
+        _column_name(field)
+        connection = duckdb.connect(self._database)
+        try:
+            if not _table_exists(connection, self._table):
+                return None
+            value = connection.execute(
+                f"SELECT max({_quoted_identifier(field)}) FROM {_quoted_identifier(self._table)}"
+            ).fetchone()[0]
+        finally:
+            connection.close()
+
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"Cursor field {field!r} in the DuckDB table must be an integer.")
+        return Cursor(field, value)
 
     def load(self, stream: pa.RecordBatchReader, strategy: MergeStrategy) -> int:
         connection = duckdb.connect(self._database)
@@ -62,9 +80,13 @@ def _required_string(target: Mapping[str, Any], name: str) -> str:
 
 def _table_name(target: Mapping[str, Any]) -> str:
     table = _required_string(target, "table")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
-        raise ValueError("target.table must be an unqualified SQL identifier.")
+    _column_name(table, "target.table")
     return table
+
+
+def _column_name(value: str, name: str = "cursor field") -> None:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+        raise ValueError(f"{name} must be an unqualified SQL identifier.")
 
 
 def _quoted_identifier(identifier: str) -> str:

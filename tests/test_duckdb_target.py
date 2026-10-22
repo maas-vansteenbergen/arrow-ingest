@@ -3,7 +3,7 @@ from __future__ import annotations
 import duckdb
 import pyarrow as pa
 
-from ingester.core import MergeStrategy
+from ingester.core import Cursor, MergeStrategy
 from ingester.targets import DuckDBTarget
 
 
@@ -51,3 +51,14 @@ def test_appends_arrow_batches_to_existing_table(tmp_path) -> None:
 
     assert row_count == 2
     assert rows == [(1,), (2,), (3,)]
+
+
+def test_reads_high_watermark_cursor_from_existing_table(tmp_path) -> None:
+    database = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.execute("CREATE TABLE products (id BIGINT)")
+        connection.execute("INSERT INTO products VALUES (2), (4), (3)")
+
+    cursor = DuckDBTarget({"path": str(database), "table": "products"}).read_cursor("id")
+
+    assert cursor == Cursor(field="id", value=4)
