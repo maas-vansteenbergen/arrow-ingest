@@ -156,3 +156,26 @@ def test_rejects_upsert_with_a_different_schema(tmp_path) -> None:
             reader,
             MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
         )
+
+
+def test_rolls_back_failed_upsert(tmp_path) -> None:
+    database = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.execute("CREATE TABLE products (id BIGINT, title VARCHAR NOT NULL)")
+        connection.execute("INSERT INTO products VALUES (1, 'old')")
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
+    reader = pa.RecordBatchReader.from_batches(
+        schema,
+        [pa.RecordBatch.from_pydict({"id": [1], "title": [None]}, schema=schema)],
+    )
+
+    with pytest.raises(duckdb.ConstraintException):
+        DuckDBTarget({"path": str(database), "table": "products"}).load(
+            reader,
+            MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
+        )
+
+    with duckdb.connect(str(database)) as connection:
+        rows = connection.execute("SELECT id, title FROM products").fetchall()
+
+    assert rows == [(1, "old")]

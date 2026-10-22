@@ -403,3 +403,18 @@ Upsert merge strategy implementation completed
 - Added coverage for merge parsing, single and composite key replacement,
   null and duplicate source keys, and schema mismatch rejection for both
   targets.
+
+Post-upsert cleanup completed
+-----------------------------
+- Made MergeConfiguration the single validation boundary for strategy/key
+  combinations; YAML parsing now only adapts configuration shape.
+- Kept shared upsert logic limited to key-field validation, incoming-key
+  validation, identifier quoting, and key-match SQL construction.
+- Made all Parquet writes publish through a temporary file and atomic
+  replacement, including replace and first-write append behavior.
+- Isolated DuckDB's matching-row replacement in an explicit transaction with
+  rollback on database errors.
+- Added failure-atomicity coverage: invalid Parquet upserts preserve the
+  existing file, and failed DuckDB inserts roll back preceding deletes.
+- Did not add a registry, pipeline executor, state manager, generic SQL
+  layer, or additional runtime abstraction.

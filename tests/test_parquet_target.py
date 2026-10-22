@@ -100,16 +100,20 @@ def test_upserts_arrow_batches_by_key(tmp_path) -> None:
 
 def test_rejects_upsert_with_duplicate_keys(tmp_path) -> None:
     schema = pa.schema([pa.field("id", pa.int64())])
+    destination = tmp_path / "rows.parquet"
+    pq.write_table(pa.table({"id": [2]}), destination)
     reader = pa.RecordBatchReader.from_batches(
         schema,
         [pa.RecordBatch.from_pydict({"id": [1, 1]}, schema=schema)],
     )
 
     with pytest.raises(ValueError, match="Incoming upsert keys must be unique within a load."):
-        ParquetTarget({"path": str(tmp_path / "rows.parquet")}).load(
+        ParquetTarget({"path": str(destination)}).load(
             reader,
             MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
         )
+
+    assert pq.read_table(destination).column("id").to_pylist() == [2]
 
 
 def test_rejects_upsert_with_a_different_schema(tmp_path) -> None:

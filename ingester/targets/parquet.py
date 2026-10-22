@@ -43,16 +43,25 @@ class ParquetTarget:
     def load(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
         self._destination.parent.mkdir(parents=True, exist_ok=True)
         if merge.strategy is MergeStrategy.REPLACE:
-            return self._write_stream(self._destination, stream)
+            return self._replace_stream(stream)
         if merge.strategy is MergeStrategy.APPEND:
             return self._append_stream(stream)
         if merge.strategy is MergeStrategy.UPSERT:
             return self._upsert_stream(stream, merge.keys)
         raise ValueError(f"ParquetTarget does not support merge strategy {merge.strategy!r}.")
 
+    def _replace_stream(self, stream: pa.RecordBatchReader) -> int:
+        temporary_destination = _temporary_path(self._destination.parent)
+        try:
+            row_count = self._write_stream(temporary_destination, stream)
+            temporary_destination.replace(self._destination)
+            return row_count
+        finally:
+            temporary_destination.unlink(missing_ok=True)
+
     def _append_stream(self, stream: pa.RecordBatchReader) -> int:
         if not self._destination.exists():
-            return self._write_stream(self._destination, stream)
+            return self._replace_stream(stream)
 
         existing_file = pq.ParquetFile(self._destination)
         if existing_file.schema_arrow != stream.schema:

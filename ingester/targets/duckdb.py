@@ -32,7 +32,7 @@ class DuckDBTarget:
             if not _table_exists(connection, self._table):
                 return None
             value = connection.execute(
-                f"SELECT max({_quoted_identifier(field)}) FROM {_quoted_identifier(self._table)}"
+                f"SELECT max({quoted_identifier(field)}) FROM {quoted_identifier(self._table)}"
             ).fetchone()[0]
         finally:
             connection.close()
@@ -49,7 +49,7 @@ class DuckDBTarget:
             connection.register("ingester_stream", stream)
             if merge.strategy is MergeStrategy.REPLACE:
                 connection.execute(
-                    f"CREATE OR REPLACE TABLE {_quoted_identifier(self._table)} AS "
+                    f"CREATE OR REPLACE TABLE {quoted_identifier(self._table)} AS "
                     "SELECT * FROM ingester_stream"
                 )
                 row_count = _row_count(connection, self._table)
@@ -57,13 +57,13 @@ class DuckDBTarget:
                 if _table_exists(connection, self._table):
                     existing_row_count = _row_count(connection, self._table)
                     connection.execute(
-                        f"INSERT INTO {_quoted_identifier(self._table)} "
+                        f"INSERT INTO {quoted_identifier(self._table)} "
                         "SELECT * FROM ingester_stream"
                     )
                     row_count = _row_count(connection, self._table) - existing_row_count
                 else:
                     connection.execute(
-                        f"CREATE TABLE {_quoted_identifier(self._table)} AS "
+                        f"CREATE TABLE {quoted_identifier(self._table)} AS "
                         "SELECT * FROM ingester_stream"
                     )
                     row_count = _row_count(connection, self._table)
@@ -93,7 +93,7 @@ class DuckDBTarget:
 
         if not _table_exists(connection, self._table):
             connection.execute(
-                f"CREATE TABLE {_quoted_identifier(self._table)} AS SELECT * FROM ingester_input"
+                f"CREATE TABLE {quoted_identifier(self._table)} AS SELECT * FROM ingester_input"
             )
             return row_count
         if _table_schema(connection, self._table) != _table_schema(connection, "ingester_input"):
@@ -101,17 +101,29 @@ class DuckDBTarget:
                 "Cannot upsert an Arrow stream with a different schema to DuckDB output."
             )
 
-        connection.execute("BEGIN TRANSACTION")
-        connection.execute(
-            f"DELETE FROM {_quoted_identifier(self._table)} AS destination "
-            "USING ingester_input AS incoming "
-            f"WHERE {key_match_condition('destination', 'incoming', keys)}"
-        )
-        connection.execute(
-            f"INSERT INTO {_quoted_identifier(self._table)} SELECT * FROM ingester_input"
-        )
-        connection.execute("COMMIT")
+        self._replace_matching_rows(connection, keys)
         return row_count
+
+    def _replace_matching_rows(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        keys: tuple[str, ...],
+    ) -> None:
+        connection.execute("BEGIN TRANSACTION")
+        try:
+            connection.execute(
+                f"DELETE FROM {quoted_identifier(self._table)} AS destination "
+                "USING ingester_input AS incoming "
+                f"WHERE {key_match_condition('destination', 'incoming', keys)}"
+            )
+            connection.execute(
+                f"INSERT INTO {quoted_identifier(self._table)} SELECT * FROM ingester_input"
+            )
+        except duckdb.Error:
+            connection.execute("ROLLBACK")
+            raise
+        else:
+            connection.execute("COMMIT")
 
 
 def _required_string(target: Mapping[str, Any], name: str) -> str:
@@ -132,10 +144,6 @@ def _column_name(value: str, name: str = "cursor field") -> None:
         raise ValueError(f"{name} must be an unqualified SQL identifier.")
 
 
-def _quoted_identifier(identifier: str) -> str:
-    return quoted_identifier(identifier)
-
-
 def _table_exists(connection: duckdb.DuckDBPyConnection, table: str) -> bool:
     return (
         connection.execute(
@@ -150,9 +158,7 @@ def _table_exists(connection: duckdb.DuckDBPyConnection, table: str) -> bool:
 
 
 def _row_count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
-    row_count = connection.execute(f"SELECT count(*) FROM {_quoted_identifier(table)}").fetchone()[
-        0
-    ]
+    row_count = connection.execute(f"SELECT count(*) FROM {quoted_identifier(table)}").fetchone()[0]
     if not isinstance(row_count, int):
         raise AssertionError("DuckDB row count query did not return an integer.")
     return row_count
@@ -161,5 +167,5 @@ def _row_count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
 def _table_schema(connection: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str]]:
     return [
         (column[0], column[1])
-        for column in connection.execute(f"DESCRIBE {_quoted_identifier(table)}").fetchall()
+        for column in connection.execute(f"DESCRIBE {quoted_identifier(table)}").fetchall()
     ]

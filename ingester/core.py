@@ -85,13 +85,7 @@ def parse_merge_configuration(value: Any) -> MergeConfiguration:
     if not isinstance(strategy_value, str):
         raise ValueError("merge.strategy must be a string.")
     strategy = parse_merge_strategy(strategy_value)
-    keys = _merge_keys(value.get("keys"))
-    if strategy is MergeStrategy.UPSERT:
-        if not keys:
-            raise ValueError("merge upsert must define one or more keys.")
-    elif keys:
-        raise ValueError(f"merge strategy {strategy.value!r} does not accept keys.")
-    return MergeConfiguration(strategy, keys)
+    return MergeConfiguration(strategy, _merge_keys(value.get("keys")))
 
 
 def _merge_keys(value: Any) -> tuple[str, ...]:
@@ -99,9 +93,4 @@ def _merge_keys(value: Any) -> tuple[str, ...]:
         return ()
     if not isinstance(value, Sequence) or isinstance(value, str):
         raise ValueError("merge.keys must be a list of non-empty strings.")
-    if not value or not all(isinstance(key, str) and key for key in value):
-        raise ValueError("merge.keys must be a list of non-empty strings.")
-    keys = tuple(value)
-    if len(set(keys)) != len(keys):
-        raise ValueError("merge.keys must not contain duplicates.")
-    return keys
+    return tuple(value)
