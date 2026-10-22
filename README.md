@@ -10,6 +10,24 @@ The project currently supports:
 - local Parquet files and DuckDB tables as targets; and
 - replace, append, upsert, and SCD2 merge strategies.
 
+## Why this exists
+
+Ingestion libraries do not need a large abstraction surface or separate data
+paths for every kind of source and destination. A connector can read from an
+external system, produce an Arrow stream, and a target can load that stream
+with an explicit merge strategy.
+
+`ingester` keeps that boundary deliberately small: connectors emit
+`pyarrow.RecordBatchReader` streams and targets consume them. New integrations
+adapt to those same contracts instead of introducing a new pipeline runtime,
+intermediate data model, or special-case execution path.
+
+Arrow is especially suitable for this boundary. Its columnar format carries an
+explicit schema alongside batches of data, which makes type handling
+predictable while allowing records to be streamed without materializing an
+entire dataset. It is also widely supported across data tools, so connectors
+and targets can interoperate with fewer conversions and copies.
+
 ## Architecture
 
 ```mermaid

@@ -15,7 +15,10 @@ Current architecture
   their public imports.
 - The project requires Python 3.12+ and CI tests Python 3.12 and 3.15.
 - Dependencies are uv-managed. CI runs locked synchronization, Ruff lint and
-  format checks, and pytest.
+  format checks, and pytest. A separate Python 3.12 coverage job publishes
+  terminal, XML, and HTML reports as a workflow artifact.
+- All Actions used by CI are pinned to immutable commit SHAs. The uv setup
+  action uses its built-in dependency cache.
 
 Implemented connectors
 ----------------------
@@ -82,14 +85,6 @@ Important constraints and deferred behavior
   deletion/tombstone semantics, schema evolution, source-order repair, or
   opaque cursors.
 
-Validation baseline
--------------------
-
-- The latest full suite passed: 51 pytest tests.
-- Repository checks passed: `uv run ruff check .` and `git diff --check`.
-- Tests cover connector configuration and retry behavior, native Parquet
-  streaming, target batching, all implemented merge strategies, cursor
-  derivation, atomic Parquet behavior, DuckDB rollback, and SCD2 ordering.
 
 Next roadmap: hardening and demo readiness
 -------------------------------------------
@@ -97,10 +92,10 @@ Next roadmap: hardening and demo readiness
 - [x] Cross-project cleanup and refactoring
 - [x] Public documentation
 - [x] Add MIT open-source license
-- [ ] Add visible GitHub Actions CI status reporting
-- [ ] Coverage measurement and CI reporting
-- [ ] Add a README architecture diagram for the Arrow stream boundary
-- [ ] Add a README "Why this exists" section explaining the minimal,
+- [x] Add visible GitHub Actions CI status reporting
+- [x] Coverage measurement and CI reporting
+- [x] Add a README architecture diagram for the Arrow stream boundary
+- [x] Add a README "Why this exists" section explaining the minimal,
   Arrow-native design
 - [ ] Dependabot and dependency/workflow hygiene
 - [ ] Essential security tooling
@@ -111,6 +106,9 @@ Documentation and typing update
 
 - Added a public README covering installation, command-line usage, supported
   configuration, merge behavior, and the package API.
+- Added a concise architecture diagram and a "Why this exists" section that
+  document the single Arrow stream boundary and the deliberately small
+  connector-target abstraction surface.
 - Added Google-style public API docstrings. Docstring sections describe
   behavior without repeating inline type annotations.
 - Added missing constant annotations for connector Arrow type mappings and
