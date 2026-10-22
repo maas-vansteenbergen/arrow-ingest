@@ -96,7 +96,12 @@ Next roadmap: hardening and demo readiness
 
 - [x] Cross-project cleanup and refactoring
 - [x] Public documentation
+- [x] Add MIT open-source license
+- [ ] Add visible GitHub Actions CI status reporting
 - [ ] Coverage measurement and CI reporting
+- [ ] Add a README architecture diagram for the Arrow stream boundary
+- [ ] Add a README "Why this exists" section explaining the minimal,
+  Arrow-native design
 - [ ] Dependabot and dependency/workflow hygiene
 - [ ] Essential security tooling
 - [ ] Thorough security risk scan and remediation
