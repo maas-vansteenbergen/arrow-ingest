@@ -4,7 +4,7 @@ import duckdb
 import pyarrow as pa
 import pytest
 
-from ingester.core import Cursor, MergeConfiguration, MergeStrategy
+from ingester.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
 from ingester.targets import DuckDBTarget
 
 
@@ -179,3 +179,115 @@ def test_rolls_back_failed_upsert(tmp_path) -> None:
         rows = connection.execute("SELECT id, title FROM products").fetchall()
 
     assert rows == [(1, "old")]
+
+
+def test_tracks_scd2_history(tmp_path) -> None:
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("title", pa.string()),
+            pa.field("version", pa.int64()),
+        ]
+    )
+    database = tmp_path / "warehouse.duckdb"
+    target = DuckDBTarget({"path": str(database), "table": "products"})
+    merge = _scd2_merge()
+
+    target.load(
+        pa.RecordBatchReader.from_batches(
+            schema,
+            [
+                pa.RecordBatch.from_pydict(
+                    {"id": [1, 2], "title": ["one", "two"], "version": [10, 10]},
+                    schema=schema,
+                )
+            ],
+        ),
+        merge,
+    )
+    row_count = target.load(
+        pa.RecordBatchReader.from_batches(
+            schema,
+            [
+                pa.RecordBatch.from_pydict(
+                    {"id": [1, 2], "title": ["updated", "two"], "version": [20, 20]},
+                    schema=schema,
+                )
+            ],
+        ),
+        merge,
+    )
+
+    with duckdb.connect(str(database)) as connection:
+        rows = connection.execute(
+            "SELECT id, title, version, valid_from, valid_to, is_current "
+            "FROM products ORDER BY id, valid_from"
+        ).fetchall()
+
+    assert row_count == 2
+    assert rows == [
+        (1, "one", 10, 10, 20, False),
+        (1, "updated", 20, 20, None, True),
+        (2, "two", 10, 10, None, True),
+    ]
+
+
+def test_rejects_out_of_order_scd2_versions(tmp_path) -> None:
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("title", pa.string()),
+            pa.field("version", pa.int64()),
+        ]
+    )
+    database = tmp_path / "warehouse.duckdb"
+    target = DuckDBTarget({"path": str(database), "table": "products"})
+    merge = _scd2_merge()
+    target.load(
+        pa.RecordBatchReader.from_batches(
+            schema,
+            [
+                pa.RecordBatch.from_pydict(
+                    {"id": [1], "title": ["one"], "version": [10]},
+                    schema=schema,
+                )
+            ],
+        ),
+        merge,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Incoming SCD2 effective_at values must be greater than current versions.",
+    ):
+        target.load(
+            pa.RecordBatchReader.from_batches(
+                schema,
+                [
+                    pa.RecordBatch.from_pydict(
+                        {"id": [1], "title": ["updated"], "version": [10]},
+                        schema=schema,
+                    )
+                ],
+            ),
+            merge,
+        )
+
+    with duckdb.connect(str(database)) as connection:
+        rows = connection.execute("SELECT id, title, version FROM products").fetchall()
+
+    assert rows == [(1, "one", 10)]
+
+
+def _scd2_merge() -> MergeConfiguration:
+    return MergeConfiguration(
+        MergeStrategy.SCD2,
+        ("id",),
+        SCD2Configuration(
+            tracked_fields=("title",),
+            effective_at="version",
+            valid_from="valid_from",
+            valid_to="valid_to",
+            is_current="is_current",
+        ),
+    )

@@ -47,6 +47,11 @@ Core contracts
      rule.
    - Upsert requires compatible source and destination schemas. A missing
      destination is initialized from the incoming stream.
+   - SCD2 retains history by business key and uses explicitly configured
+     version-boundary and metadata fields; it must not add hidden columns.
+   - Version boundaries come from ordered source data, not ingestion time.
+   - SCD2 versions only when configured business attributes change and
+     requires deterministic source ordering.
 
 Declarative configuration
 -------------------------

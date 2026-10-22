@@ -57,6 +57,7 @@ def test_derives_cursor_from_destination_for_append(tmp_path) -> None:
 
     assert _cursor_from_destination(connector, destination, MergeStrategy.APPEND) is None
     assert _cursor_from_destination(connector, destination, MergeStrategy.UPSERT) is None
+    assert _cursor_from_destination(connector, destination, MergeStrategy.SCD2) is None
 
 
 def test_rejects_destination_cursor_without_append() -> None:
@@ -76,6 +77,6 @@ def test_rejects_destination_cursor_without_append() -> None:
 
     with pytest.raises(
         ValueError,
-        match="A destination-derived cursor requires merge strategy 'append' or 'upsert'.",
+        match="A destination-derived cursor requires merge strategy 'append', 'upsert', or 'scd2'.",
     ):
         _cursor_from_destination(connector, destination, MergeStrategy.REPLACE)

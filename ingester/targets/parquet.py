@@ -12,7 +12,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from ..core import Cursor, MergeConfiguration, MergeStrategy
+from ..core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
+from ._scd2 import apply_scd2
 from ._upsert import key_match_condition, validate_incoming_keys, validate_key_fields
 
 
@@ -48,6 +49,8 @@ class ParquetTarget:
             return self._append_stream(stream)
         if merge.strategy is MergeStrategy.UPSERT:
             return self._upsert_stream(stream, merge.keys)
+        if merge.strategy is MergeStrategy.SCD2:
+            return self._scd2_stream(stream, merge)
         raise ValueError(f"ParquetTarget does not support merge strategy {merge.strategy!r}.")
 
     def _replace_stream(self, stream: pa.RecordBatchReader) -> int:
@@ -139,6 +142,37 @@ class ParquetTarget:
             incoming_destination.unlink(missing_ok=True)
             output_destination.unlink(missing_ok=True)
 
+    def _scd2_stream(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
+        output_destination = _temporary_path(self._destination.parent)
+        try:
+            output_destination.unlink()
+            connection = duckdb.connect()
+            try:
+                connection.register("ingester_stream", stream)
+                if self._destination.exists():
+                    connection.execute(
+                        "CREATE TABLE ingester_destination AS SELECT * FROM "
+                        f"read_parquet({_sql_string(self._destination)})"
+                    )
+                row_count = apply_scd2(
+                    connection,
+                    "ingester_destination",
+                    stream.schema,
+                    merge.keys,
+                    _scd2_configuration(merge),
+                )
+                connection.execute(
+                    f"COPY ingester_destination TO {_sql_string(output_destination)} "
+                    "(FORMAT PARQUET)"
+                )
+            finally:
+                connection.close()
+
+            output_destination.replace(self._destination)
+            return row_count
+        finally:
+            output_destination.unlink(missing_ok=True)
+
     @staticmethod
     def _write_stream(destination: Path, stream: pa.RecordBatchReader) -> int:
         row_count = 0
@@ -158,3 +192,9 @@ def _temporary_path(directory: Path) -> Path:
 
 def _sql_string(value: Path) -> str:
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _scd2_configuration(merge: MergeConfiguration) -> SCD2Configuration:
+    if merge.scd2 is None:
+        raise AssertionError("SCD2 merge configuration is missing SCD2 settings.")
+    return merge.scd2
