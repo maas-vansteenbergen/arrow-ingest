@@ -9,7 +9,8 @@ from typing import Any
 import duckdb
 import pyarrow as pa
 
-from ..core import Cursor, MergeConfiguration, MergeStrategy
+from ..core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
+from ._scd2 import apply_scd2
 from ._upsert import (
     key_match_condition,
     quoted_identifier,
@@ -69,6 +70,14 @@ class DuckDBTarget:
                     row_count = _row_count(connection, self._table)
             elif merge.strategy is MergeStrategy.UPSERT:
                 row_count = self._upsert_stream(connection, stream.schema, merge.keys)
+            elif merge.strategy is MergeStrategy.SCD2:
+                row_count = apply_scd2(
+                    connection,
+                    self._table,
+                    stream.schema,
+                    merge.keys,
+                    _scd2_configuration(merge),
+                )
             else:
                 raise ValueError(
                     f"DuckDBTarget does not support merge strategy {merge.strategy!r}."
@@ -169,3 +178,9 @@ def _table_schema(connection: duckdb.DuckDBPyConnection, table: str) -> list[tup
         (column[0], column[1])
         for column in connection.execute(f"DESCRIBE {quoted_identifier(table)}").fetchall()
     ]
+
+
+def _scd2_configuration(merge: MergeConfiguration) -> SCD2Configuration:
+    if merge.scd2 is None:
+        raise AssertionError("SCD2 merge configuration is missing SCD2 settings.")
+    return merge.scd2

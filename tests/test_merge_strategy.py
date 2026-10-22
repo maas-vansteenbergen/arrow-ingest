@@ -5,6 +5,7 @@ import pytest
 from ingester.core import (
     MergeConfiguration,
     MergeStrategy,
+    SCD2Configuration,
     parse_merge_configuration,
     parse_merge_strategy,
 )
@@ -35,9 +36,49 @@ def test_rejects_direct_upsert_configuration_without_keys() -> None:
         MergeConfiguration(MergeStrategy.UPSERT)
 
 
+def test_parses_scd2_configuration() -> None:
+    merge = parse_merge_configuration(
+        {
+            "strategy": "scd2",
+            "keys": ["id"],
+            "tracked_fields": ["title"],
+            "effective_at": "version",
+            "valid_from": "valid_from",
+            "valid_to": "valid_to",
+            "is_current": "is_current",
+        }
+    )
+
+    assert merge == MergeConfiguration(
+        MergeStrategy.SCD2,
+        ("id",),
+        SCD2Configuration(
+            tracked_fields=("title",),
+            effective_at="version",
+            valid_from="valid_from",
+            valid_to="valid_to",
+            is_current="is_current",
+        ),
+    )
+
+
+def test_rejects_scd2_settings_for_upsert() -> None:
+    with pytest.raises(
+        ValueError,
+        match="merge strategy 'upsert' does not support fields: effective_at.",
+    ):
+        parse_merge_configuration(
+            {
+                "strategy": "upsert",
+                "keys": ["id"],
+                "effective_at": "version",
+            }
+        )
+
+
 def test_rejects_unsupported_strategy() -> None:
     with pytest.raises(
         ValueError,
-        match=r"Unsupported merge strategy 'merge'. Supported strategies: append, replace, upsert.",
+        match=r"Unsupported merge strategy 'merge'. Supported strategies: append, replace, scd2, upsert.",
     ):
         parse_merge_strategy("merge")

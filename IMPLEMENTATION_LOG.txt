@@ -19,7 +19,7 @@ Implementation roadmap
 - [x] Append merge strategy
 - [x] Cursor/incremental state
 - [x] Upsert merge strategy
-- [ ] SCD2 merge strategy
+- [x] SCD2 merge strategy
 
 Completed
 ---------
@@ -418,3 +418,26 @@ Post-upsert cleanup completed
   existing file, and failed DuckDB inserts roll back preceding deletes.
 - Did not add a registry, pipeline executor, state manager, generic SQL
   layer, or additional runtime abstraction.
+
+SCD2 merge strategy implementation completed
+---------------------------------------------
+- Added `merge: {strategy: scd2, ...}` configuration with explicit business
+  keys, tracked fields, source `effective_at`, and named `valid_from`,
+  `valid_to`, and `is_current` output columns.
+- Added SCD2Configuration as the typed core representation of those settings.
+- Both targets use the same DuckDB-backed SCD2 transition logic: stage and
+  validate incoming Arrow records, close changed current versions at the
+  source effective value, and insert replacement current versions.
+- ParquetTarget materializes the transition in an in-memory DuckDB table and
+  atomically publishes the resulting Parquet file. DuckDBTarget applies the
+  same transition transactionally to its named table.
+- SCD2 source keys must be non-null and unique; source effective values must
+  be strictly greater than any matching current version. Out-of-order records
+  are rejected before destination mutation.
+- Only configured tracked fields create history. Newer records with unchanged
+  tracked fields leave the current SCD2 version unchanged.
+- Destination-derived high-watermark cursors are compatible with SCD2,
+  append, and upsert loads.
+- Not implemented: timestamps, multiple events for a key in one load,
+  deletion/tombstone semantics, schema evolution, source ordering repair, or
+  opaque cursor persistence.
