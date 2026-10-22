@@ -1,420 +1,106 @@
-Implementation log
+Implementation Log
 ==================
 
-Implementation roadmap
+Current architecture
+--------------------
+
+- Arrow is the connector-target contract: connectors emit
+  `pyarrow.RecordBatchReader` and targets consume it.
+- Public runtime concepts are Connector, Cursor, Arrow stream, Target, and
+  MergeConfiguration. There is no pipeline, source, resource, registry, or
+  state-manager abstraction.
+- `demo.py` is a thin YAML/configuration adapter. Concrete implementations
+  live in `ingester.connectors` and `ingester.targets`; package facades
+  preserve their public imports.
+- The project requires Python 3.12+ and CI tests Python 3.12 and 3.15.
+- Dependencies are uv-managed. CI runs locked synchronization, Ruff lint and
+  format checks, and pytest.
+
+Implemented connectors
 ----------------------
-- [x] Commit pagination
-- [x] Bearer authentication
-- [x] Static headers/query parameters
-- [x] Timeout/retry controls
-- [x] Strict schema policy
-- [x] Repository foundations
-  -  linting/formatting
-  -  GitHub Actions CI, and
-  -  development-container review
-- [x] Parquet file connector
-- [x] Test suite cleanup
-- [x] DuckDB target
-- [x] Connector and target module cleanup
-- [x] Append merge strategy
-- [x] Cursor/incremental state
-- [x] Upsert merge strategy
-- [ ] SCD2 merge strategy
 
-Completed
----------
-- Added a Connector protocol with read() returning pyarrow.RecordBatchReader.
-- Added RestConnector, which owns the configured HTTP request, JSON record
-  selection, Arrow schema creation, and conversion to an Arrow stream.
-- Changed main() to construct RestConnector and consume its Arrow stream only
-  at the existing Parquet-writing boundary.
-- Preserved the existing connector.yaml configuration and output target.
+- RestConnector supports JSON record selection, strict declared-schema
+  projection, fixed-size Arrow batches, static string headers and query
+  parameters, bearer tokens from named environment variables, offset
+  pagination, and bounded timeout/retry/backoff behavior.
+- REST retries only transport failures and 429/5xx responses; configuration,
+  schema, response-shape, and other HTTP failures fail immediately.
+- ParquetConnector exposes local Parquet files as native Arrow batch streams.
 
-Out of scope
-------------
-- Pagination, authentication configuration, retries, rate limits, and state.
-- Target abstractions, ADBC, Polars, and merge strategies.
-- Registries, pipelines, sources, resources, and orchestration.
+Implemented targets and merge behavior
+--------------------------------------
 
-Validation
-----------
-- RestConnector produced an Arrow stream that read back as 10 rows with:
-  id, title, price, category, stock.
-- Writing that stream's table to a temporary Parquet file and reading it back
-  succeeded.
-- `python demo.py connector.yaml` reached its Parquet write but could not
-  replace output/products.parquet because that pre-existing file is not
-  writable in this environment. No source or configuration change was made to
-  work around that filesystem permission issue.
-
-Target implementation completed
--------------------------------
-- Added a Target protocol whose load() accepts pyarrow.RecordBatchReader.
-- Added ParquetTarget, which owns directory creation and Parquet output.
-- Changed main() to connect RestConnector.read() directly to ParquetTarget.load().
-- Kept connector.yaml unchanged; merge strategies remain out of scope.
-
-Target validation
------------------
-- A temporary ParquetTarget consumed RestConnector's Arrow stream and wrote
-  10 rows.
-- Reading that Parquet output confirmed the configured columns: id, title,
-  price, category, stock.
-
-Connector terminology implementation completed
-----------------------------------------------
-- Renamed the YAML section from `source` to `connector`.
-- Renamed the RestConnector configuration parameter and internal field.
-- Renamed the configuration error to `connector.records_path`.
-- Did not add a legacy `source` alias or alter ingestion behavior.
-
-Connector terminology validation
---------------------------------
-- The renamed `connector` configuration drove RestConnector through
-  ParquetTarget to a temporary file.
-- The output contained 10 rows and the configured columns: id, title, price,
-  category, stock.
-
-Abstraction surface check
--------------------------
-- Public concepts introduced: Connector, Target, and the Arrow
-  RecordBatchReader contract.
-- Concrete implementations introduced: RestConnector and ParquetTarget.
-- No source/resource/pipeline/asset/dataset/block/flow abstraction exists.
-- The `connector` and `target` YAML sections are configuration, not runtime
-  framework concepts.
-- `load()` returning an integer is operational metadata, not a framework data
-  model. No non-Arrow data crosses from Connector to Target.
-
-Replace merge strategy implementation completed
-------------------------------------------------
-- Added `merge: replace` to connector.yaml.
-- Added MergeStrategy with the single supported value: `replace`.
-- Changed Target.load() and ParquetTarget.load() to receive the strategy.
-- Made ParquetTarget reject any strategy other than `replace`.
-- Preserved the current overwrite behavior.
-
-Explicitly not implemented
---------------------------
-- `append`, `upsert`, or `scd2`.
-- Primary keys, cursors, state, or destination metadata.
-- Additional targets, ADBC, pagination, authentication, rate limiting, or
-  schema-policy changes.
-
-Validation
-----------
-- `replace` wrote a temporary Parquet output with 10 rows and the configured
-  columns: id, title, price, category, stock.
-- The unsupported `append` strategy was rejected with:
-  `Unsupported merge strategy 'append'. Supported strategies: replace.`
-
-Arrow batch streaming implementation completed
-------------------------------------------------
-- RestConnector now constructs RecordBatch objects directly in fixed-size
-  internal batches rather than building a Table first.
-- ParquetTarget now writes each incoming batch through ParquetWriter and does
-  not call RecordBatchReader.read_all().
-- The public RecordBatchReader contract, schema, `replace` behavior,
-  configuration shape, and row-count output are unchanged.
-
-Still intentionally buffered
-----------------------------
-- This REST connector still loads its JSON response before forming Arrow
-  batches because it uses the standard JSON decoder.
-- Incremental HTTP/JSON decoding, configurable batch size, pagination, Polars,
-  ADBC, additional targets, and additional merge strategies remain out of
-  scope.
-
-Validation
-----------
-- The configured REST connector wrote 10 rows with the declared columns:
-  id, title, price, category, stock.
-- ParquetTarget consumed a two-batch Arrow reader and persisted all three
-  values in input order without materializing the stream as a Table.
-
-Design decision: initial connector scope
-----------------------------------------
-- Added initial supported connector categories to DESIGN_PLAN.txt: Parquet,
-  flat files, ADBC-capable databases, and HTTP APIs.
-- Recorded that object storage is a file location rather than a separate
-  connector category.
-- Explicitly excluded message queues/streams, CDC/replication protocols,
-  spreadsheets, and SDK-only integrations from the initial scope.
-- This bounds the project around connectors that can reasonably emit Arrow
-  batches without introducing a separate streaming or replication framework.
-
-Automated test baseline completed
----------------------------------
-- Added pytest to the development requirements.
-- Added a network-free REST connector test for JSON record selection and
-  declared-schema conversion.
-- Added a multi-batch Parquet target test.
-- Added an unsupported merge-strategy error test.
-- `python -m pytest -q tests/test_demo.py` passed: 3 tests.
-
-Cleanup checkpoint
-------------------
-Perform a focused structural cleanup immediately after this test baseline and
-before adding pagination, authentication, state, or a second target.
-
-That cleanup should:
-- Move Connector, Target, MergeStrategy, and their implementations out of
-  demo.py into a small package/module layout.
-- Keep the public concepts unchanged and avoid registries, factories, or a
-  pipeline layer.
-- Leave demo.py as a thin CLI/configuration adapter.
-- Preserve the same focused tests throughout the move.
-
-Module cleanup completed
-------------------------
-- Moving the contracts and implementations into a small `ingester` package.
-- Reduced demo.py to YAML configuration and CLI wiring.
-- Kept the existing tests focused on implementation modules.
-- Added ingester.core for contracts and merge parsing, ingester.connectors for
-  RestConnector, and ingester.targets for ParquetTarget.
-- Did not add factories, registries, pipelines, or any new public concepts.
-- `python -m pytest -q tests/test_demo.py` passed: 3 tests.
-
-Final cleanup item
-------------------
-Renamed `tests/test_demo.py` to `tests/test_ingester.py`.
-
-The test name now matches the `ingester` package that it exercises directly,
-rather than the thin demo CLI. Structural cleanup is complete; further module
-splitting or package infrastructure would not provide enough value at the
-current project size.
-
-Offset pagination implementation completed
-------------------------------------------
-- Added the first declarative REST pagination mode directly to RestConnector.
-- Supporting only YAML-configured offset/limit pagination with a response total
-  path.
-- Emitting Arrow batches per fetched page without a Paginator abstraction.
-- Not adding cursor or next-link pagination, state, authentication, retries, or
-  rate limiting.
-- Added tests for configured page queries and unsupported pagination modes.
-- `python -m pytest -q tests/test_ingester.py` passed: 5 tests.
-- The configured demo fetched 194 products through offset pagination and wrote
-  them to a temporary Parquet file with the declared five columns.
-
-Bearer authentication implementation completed
-------------------------------------------------
-- Adding the first declarative REST authentication mode: bearer tokens from a
-  named environment variable.
-- Preserving unauthenticated connector behavior when `auth` is absent.
-- Failing before an HTTP request when the configured environment variable is
-  missing or empty, without revealing the token.
-- Not adding basic authentication, OAuth, static headers, secret-manager
-  integration, retries, or rate limiting.
-- Verified the configured bearer header is sent for regular and every
-  paginated request.
-- `python -m pytest -q tests/test_ingester.py` passed: 7 tests.
-
-Static request configuration implementation completed
------------------------------------------------------
-- Adding static string headers and query parameters to RestConnector.
-- Preserving static query parameters across every paginated request while
-  pagination overrides only its offset and limit parameters.
-- Rejecting a configured Authorization header when bearer authentication is
-  also configured.
-- Not adding header templating, non-string parameter values, OAuth, retries,
-  or rate limiting.
-- Verified static headers and query parameters are present on every configured
-  offset-pagination request.
-- `python -m pytest -q tests/test_ingester.py` passed: 8 tests.
-
-RestConnector cleanup completed
--------------------------------
-- Added a private immutable request configuration that resolves the URL,
-  headers, authentication, and static query parameters once per run.
-- Separated private helpers for request execution, schema construction, record
-  selection, Arrow batch creation, and offset pagination.
-- Kept RestConnector as the only public REST connector concept and preserved
-  the YAML contract.
-- This provides a clear request-execution boundary for bounded retry and
-  timeout behavior without adding a retry framework.
-- `python -m pytest -q tests/test_ingester.py` passed: 8 tests.
-
-Timeout and retry implementation completed
--------------------------------------------
-- Adding optional request timeouts, bounded retries, and exponential backoff.
-- Retrying only URLError/TimeoutError transport failures and 429/5xx responses.
-- Failing immediately for other HTTP errors and all configuration, schema, and
-  response-shape failures.
-- Not adding Retry-After handling, rate limiting, OAuth refresh, circuit
-  breakers, background workers, or a general retry framework.
-- Verified timeout propagation, exponential backoff, retryable 5xx failures,
-  retryable transport failures, and immediate non-retryable 4xx failure.
-- `python -m pytest -q tests/test_ingester.py` passed: 11 tests.
-- The configured demo fetched 194 products and wrote them to a temporary
-  Parquet file with the declared five columns.
-
-Strict schema policy implementation completed
----------------------------------------------
-- Added `schema_policy: strict`, which is also the default when omitted.
-- Strict is a projection policy: every declared field is required and must
-  match its declared primitive Arrow type; undeclared source fields are
-  ignored.
-- Null remains valid only for nullable Arrow fields.
-- Rejected unsupported policies rather than silently falling back.
-- Added tests for nullable fields, missing declared fields, undeclared source
-  fields, type mismatches, and unsupported policy names.
-- `python -m pytest -q tests/test_ingester.py` passed: 16 tests.
-- The configured demo fetched 194 products with strict projection validation
-  and wrote the declared five columns to a temporary Parquet file.
-
-Repository foundations completed
---------------------------------
-- Replaced requirements.txt with uv-managed pyproject.toml and uv.lock.
-- Added Ruff linting and formatting configuration.
-- Added GitHub Actions CI that runs locked dependency sync, Ruff lint/format
-  checks, and pytest.
-- Updated the development container to install uv, synchronize all dependency
-  groups, and include the Ruff VS Code extension.
-- Added .ruff_cache to .gitignore.
-- Local CI-equivalent validation passed:
-  `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest`.
-- Verified live PyPI releases and raised declared baselines to the newest
-  Python-3.12-compatible versions.
-- Current direct dependencies: PyArrow 26.0.0, PyYAML 6.0.3, pytest 9.1.1,
-  Ruff 0.17.1, and Hatchling 1.32.4.
-
-Python 3.15 support added
--------------------------
-- Retained Python 3.12 as the minimum (`requires-python = ">=3.12"`) and
-  Ruff compatibility target (`py312`).
-- Added Python 3.15 as the tested CI ceiling and package classifier.
-- Updated the development container to Python 3.15.
-- Reviewed the official Python 3.15 What's New/porting guidance; no relevant
-  compatibility changes were identified for the current pure-Python code.
-- Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
-  all 16 pytest tests.
-
-Parquet file connector implementation completed
-------------------------------------------------
-- Added ParquetConnector, which exposes local Parquet files as native Arrow
-  RecordBatchReader streams without schema normalization or data conversion.
-- Added explicit `connector.type` selection in the demo CLI for `rest` and
-  `parquet`; this is a private CLI switch, not a connector registry.
-- Added a focused test for Parquet schema and row preservation.
-- Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
-  all 17 pytest tests.
-- A temporary `type: parquet` CLI configuration read a local Parquet source
-  and wrote the expected target Parquet output.
-- Not implemented: object storage, partition discovery, schema policy for
-  Parquet input, non-Parquet flat files, or connector registries.
-
-Test suite cleanup completed
-----------------------------
-- Split the monolithic test file into REST connector, Parquet connector,
-  Parquet target, and merge-strategy test modules.
-- Added module-local REST fixtures for repeated connector configuration and
-  simple JSON responses; custom request-inspection and retry fakes remain
-  inline with their specific tests.
-- Did not introduce a shared fixture framework.
-- Preserved all 17 behavioral tests and left production code unchanged.
-- Python 3.12.11 and Python 3.15.0 both passed Ruff linting, formatting, and
-  all 17 pytest tests.
-
-DuckDB target implementation completed
----------------------------------------
-- Added DuckDBTarget, which loads an Arrow RecordBatchReader directly into a
-  named table in a local DuckDB database.
-- Supports `replace` only, using `CREATE OR REPLACE TABLE`; unsupported merge
-  strategies are rejected consistently with ParquetTarget.
-- Validates that `target.path` and `target.table` are non-empty strings, and
-  limits table names to unqualified SQL identifiers before quoting them.
-- Added a focused multi-batch test that confirms all input rows persist in
-  order and that the reported row count is correct.
-- Not implemented: append, upsert, SCD2, schemas/catalogs, ADBC loading, or
-  remote DuckDB connections.
-
-Connector and target module cleanup completed
----------------------------------------------
-- Split concrete implementations into dedicated modules:
-  `connectors.rest`, `connectors.parquet`, `targets.parquet`, and
-  `targets.duckdb`.
-- Retained `ingester.connectors` and `ingester.targets` as import facades, so
-  existing consumer imports remain stable.
-- Kept type selection explicit in the thin demo CLI. It now has symmetric
-  private dispatch for the supported connector and target types, without a
-  registry, factory framework, or new runtime abstraction.
-- Moved REST request mocking in the test suite to the REST implementation
-  module and added focused tests for supported and unsupported CLI type
-  selection.
-- Further splitting remains deferred until a concrete implementation gains
-  enough independent behavior to warrant it.
-
-Append merge strategy implementation completed
-----------------------------------------------
-- Added `append` alongside `replace` as a supported MergeStrategy.
-- DuckDBTarget appends incoming Arrow streams with `INSERT INTO` when the
-  configured table exists, and creates the table from the stream otherwise.
-- ParquetTarget appends without materializing either dataset: it streams the
-  existing file's batches followed by the incoming batches into a temporary
-  Parquet file, then atomically replaces the destination.
-- Parquet append requires an exactly matching Arrow schema and leaves the
-  existing output intact when the new stream is incompatible.
-- `load()` reports only the number of rows written by the current append,
-  rather than the destination's total number of rows.
-- Added coverage for merge-strategy parsing, Parquet append and schema
-  rejection, and DuckDB append.
-- Not implemented: primary-key-aware upsert, SCD2, destination metadata, or
-  schema evolution.
-
-Destination-derived cursor implementation completed
----------------------------------------------------
-- Added Cursor as the small runtime value carrying an integer destination
-  field and its maximum persisted value.
-- Added the first REST incremental mode: `cursor.type: high_watermark`, with
-  a declared `int64` schema field and a source request parameter.
-- Before a configured append load, the CLI asks the target for the maximum
-  persisted cursor value. REST sends that value only when one exists, so the
-  first load remains unfiltered.
-- ParquetTarget derives the value by scanning the configured output column;
-  DuckDBTarget derives it with `max()` from the configured table.
-- Restricted this cursor mode to append and upsert loads. It does not introduce
-  a state store, hidden metadata columns, opaque cursor persistence,
-  timestamps, compound cursors, lookback windows, or duplicate handling for
-  tied values.
-- Added coverage for REST cursor parameters and validation, both target
-  implementations, first-run behavior, and the append-only requirement.
-
-Upsert merge strategy implementation completed
------------------------------------------------
-- Added structured merge configuration. Existing scalar `append` and
-  `replace` configuration remains valid; upsert requires:
+- ParquetTarget and DuckDBTarget support `replace`, `append`, `upsert`, and
+  `scd2`.
+- All single-file Parquet destination writes use temporary files and atomic
+  replacement. Append rewrites existing and incoming batches because Parquet
+  does not support safe in-place append.
+- DuckDB upsert and SCD2 mutations are transactional. Failed database writes
+  roll back before matching destination rows can be lost.
+- Scalar `merge: replace` and `merge: append` remain valid. Upsert uses
   `merge: {strategy: upsert, keys: [...]}`.
-- Added MergeConfiguration, which validates strategy/key combinations for
-  both parsed configuration and direct library callers.
-- DuckDBTarget stages the incoming Arrow stream, rejects null or duplicate
-  key tuples, validates schema compatibility, then replaces matching rows and
-  inserts incoming rows in a transaction.
-- ParquetTarget stages incoming batches, applies the same key validation,
-  creates the merged output through DuckDB, and atomically replaces the
-  destination file.
-- Both targets initialize a missing destination from the incoming stream and
-  report the number of incoming rows written by an upsert.
-- Destination-derived high-watermark cursors are compatible with upsert as
-  well as append loads.
-- Source and destination schemas must match exactly. No implicit duplicate
-  ordering, null-key behavior, schema evolution, deletion synchronization, or
-  SCD2 history behavior was added.
-- Added coverage for merge parsing, single and composite key replacement,
-  null and duplicate source keys, and schema mismatch rejection for both
-  targets.
+- Upsert requires source/destination schema compatibility and non-null,
+  unique incoming key tuples. It replaces matching destination rows and
+  retains unmatched rows.
+- SCD2 requires business keys, tracked fields, an `int64` source
+  `effective_at` field, and explicitly named `valid_from`, `valid_to`, and
+  `is_current` output fields. It closes changed current rows at the source
+  effective value and creates a new current version. Unchanged tracked fields
+  do not create history.
 
-Post-upsert cleanup completed
+Incremental loading and state
 -----------------------------
-- Made MergeConfiguration the single validation boundary for strategy/key
-  combinations; YAML parsing now only adapts configuration shape.
-- Kept shared upsert logic limited to key-field validation, incoming-key
-  validation, identifier quoting, and key-match SQL construction.
-- Made all Parquet writes publish through a temporary file and atomic
-  replacement, including replace and first-write append behavior.
-- Isolated DuckDB's matching-row replacement in an explicit transaction with
-  rollback on database errors.
-- Added failure-atomicity coverage: invalid Parquet upserts preserve the
-  existing file, and failed DuckDB inserts roll back preceding deletes.
-- Did not add a registry, pipeline executor, state manager, generic SQL
-  layer, or additional runtime abstraction.
+
+- The implemented cursor is a destination-derived REST high watermark over a
+  declared `int64` field. Targets derive its maximum persisted value; the
+  first load is unfiltered.
+- High-watermark cursors are compatible with append, upsert, and SCD2.
+- State is derived from destination data; no hidden ingestion metadata
+  columns or state store exists.
+- The design allows opaque source cursors later, but no persistence mechanism
+  has been implemented.
+
+Important constraints and deferred behavior
+-------------------------------------------
+
+- REST responses are still JSON-decoded before Arrow batches are formed.
+- Supported REST authentication is bearer tokens only. OAuth refresh, API
+  keys, Basic auth, mTLS, custom signing, and secret-provider integration are
+  not implemented.
+- REST pagination is offset-based only. Cursor/next-link pagination and rate
+  limiting are not implemented.
+- Strict schema policy is the only REST schema policy. Supported declared
+  primitive Arrow types are int64, float64, string, and bool.
+- Parquet inputs are local files only. Object storage, partition discovery,
+  flat-file connectors, ADBC connectors, and connector registries are not
+  implemented.
+- Upsert does not provide schema evolution, deletion synchronization, or an
+  implicit duplicate-record ordering rule.
+- SCD2 does not support timestamps, multiple events for one key in a load,
+  deletion/tombstone semantics, schema evolution, source-order repair, or
+  opaque cursors.
+
+Validation baseline
+-------------------
+
+- The latest full suite passed: 51 pytest tests.
+- Repository checks passed: `uv run ruff check .`,
+  `uv run ruff format --check .`, and `git diff --check`.
+- Tests cover connector configuration and retry behavior, native Parquet
+  streaming, target batching, all implemented merge strategies, cursor
+  derivation, atomic Parquet behavior, DuckDB rollback, and SCD2 ordering.
+
+Next roadmap: hardening and demo readiness
+-------------------------------------------
+
+- [ ] Cross-project cleanup and refactoring
+- [ ] Public documentation
+- [ ] Coverage measurement and CI reporting
+- [ ] Dependabot and dependency/workflow hygiene
+- [ ] Essential security tooling
+- [ ] Thorough security risk scan and remediation
+
+This iteration adds no product features: no connectors, targets,
+authentication models, cursor modes, merge semantics, transformations, or
+runtime abstractions. It focuses exclusively on clarity, reliability,
+maintainability, CI, dependency hygiene, security, and demo readiness.
