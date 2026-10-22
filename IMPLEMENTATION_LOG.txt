@@ -9,9 +9,10 @@ Current architecture
 - Public runtime concepts are Connector, Cursor, Arrow stream, Target, and
   MergeConfiguration. There is no pipeline, source, resource, registry, or
   state-manager abstraction.
-- `demo.py` is a thin YAML/configuration adapter. Concrete implementations
-  live in `ingester.connectors` and `ingester.targets`; package facades
-  preserve their public imports.
+- `demo.py` is a thin YAML/configuration adapter. `pipeline.yaml` is the
+  runnable sample pipeline configuration. Concrete implementations live in
+  `ingester.connectors` and `ingester.targets`; package facades preserve
+  their public imports.
 - The project requires Python 3.12+ and CI tests Python 3.12 and 3.15.
 - Dependencies are uv-managed. CI runs locked synchronization, Ruff lint and
   format checks, and pytest.
@@ -21,7 +22,8 @@ Implemented connectors
 
 - RestConnector supports JSON record selection, strict declared-schema
   projection, fixed-size Arrow batches, static string headers and query
-  parameters, bearer tokens from named environment variables, offset
+  parameters, bearer tokens from named environment variables using the
+  standard `Bearer` authorization scheme, offset
   pagination, and bounded timeout/retry/backoff behavior.
 - REST retries only transport failures and 429/5xx responses; configuration,
   schema, response-shape, and other HTTP failures fail immediately.
@@ -84,8 +86,7 @@ Validation baseline
 -------------------
 
 - The latest full suite passed: 51 pytest tests.
-- Repository checks passed: `uv run ruff check .`,
-  `uv run ruff format --check .`, and `git diff --check`.
+- Repository checks passed: `uv run ruff check .` and `git diff --check`.
 - Tests cover connector configuration and retry behavior, native Parquet
   streaming, target batching, all implemented merge strategies, cursor
   derivation, atomic Parquet behavior, DuckDB rollback, and SCD2 ordering.
@@ -93,14 +94,26 @@ Validation baseline
 Next roadmap: hardening and demo readiness
 -------------------------------------------
 
-- [ ] Cross-project cleanup and refactoring
-- [ ] Public documentation
+- [x] Cross-project cleanup and refactoring
+- [x] Public documentation
 - [ ] Coverage measurement and CI reporting
 - [ ] Dependabot and dependency/workflow hygiene
 - [ ] Essential security tooling
 - [ ] Thorough security risk scan and remediation
 
-This iteration adds no product features: no connectors, targets,
-authentication models, cursor modes, merge semantics, transformations, or
-runtime abstractions. It focuses exclusively on clarity, reliability,
-maintainability, CI, dependency hygiene, security, and demo readiness.
+Documentation and typing update
+-------------------------------
+
+- Added a public README covering installation, command-line usage, supported
+  configuration, merge behavior, and the package API.
+- Added Google-style public API docstrings. Docstring sections describe
+  behavior without repeating inline type annotations.
+- Added missing constant annotations for connector Arrow type mappings and
+  batch sizes.
+- Corrected REST bearer authentication to send the configured token with the
+  `Bearer` authorization scheme; focused tests verify the outgoing header.
+
+This iteration adds no connectors, targets, cursor modes, merge semantics,
+transformations, or runtime abstractions. It improves public documentation,
+type clarity, and the reliability of the existing bearer-authentication
+capability.
