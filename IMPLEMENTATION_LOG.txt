@@ -9,9 +9,10 @@ Current architecture
 - Public runtime concepts are Connector, Cursor, Arrow stream, Target, and
   MergeConfiguration. There is no pipeline, source, resource, registry, or
   state-manager abstraction.
-- `demo.py` is a thin YAML/configuration adapter. Concrete implementations
-  live in `ingester.connectors` and `ingester.targets`; package facades
-  preserve their public imports.
+- `demo.py` is a thin YAML/configuration adapter. `pipeline.yaml` is the
+  runnable sample pipeline configuration. Concrete implementations live in
+  `ingester.connectors` and `ingester.targets`; package facades preserve
+  their public imports.
 - The project requires Python 3.12+ and CI tests Python 3.12 and 3.15.
 - Dependencies are uv-managed. CI runs locked synchronization, Ruff lint and
   format checks, and pytest.

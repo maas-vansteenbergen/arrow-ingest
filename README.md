@@ -24,10 +24,10 @@ Configure the connector, merge strategy, and target in YAML, then run the
 included command-line entry point:
 
 ```console
-uv run python demo.py connector.yaml
+uv run python demo.py pipeline.yaml
 ```
 
-The repository's [`connector.yaml`](./connector.yaml) is a runnable example
+The repository's [`pipeline.yaml`](./pipeline.yaml) is a runnable example
 that reads paginated product data and writes a Parquet file.
 
 ## Configuration
