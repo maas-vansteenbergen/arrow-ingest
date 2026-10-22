@@ -18,7 +18,8 @@ Implementation roadmap
 - [x] Connector and target module cleanup
 - [x] Append merge strategy
 - [x] Cursor/incremental state
-- [ ] Upsert and SCD2 merge strategies
+- [x] Upsert merge strategy
+- [ ] SCD2 merge strategy
 
 Completed
 ---------
@@ -372,8 +373,48 @@ Destination-derived cursor implementation completed
   first load remains unfiltered.
 - ParquetTarget derives the value by scanning the configured output column;
   DuckDBTarget derives it with `max()` from the configured table.
-- Restricted this cursor mode to append loads. It does not introduce a state
-  store, hidden metadata columns, opaque cursor persistence, timestamps,
-  compound cursors, lookback windows, or duplicate handling for tied values.
+- Restricted this cursor mode to append and upsert loads. It does not introduce
+  a state store, hidden metadata columns, opaque cursor persistence,
+  timestamps, compound cursors, lookback windows, or duplicate handling for
+  tied values.
 - Added coverage for REST cursor parameters and validation, both target
   implementations, first-run behavior, and the append-only requirement.
+
+Upsert merge strategy implementation completed
+-----------------------------------------------
+- Added structured merge configuration. Existing scalar `append` and
+  `replace` configuration remains valid; upsert requires:
+  `merge: {strategy: upsert, keys: [...]}`.
+- Added MergeConfiguration, which validates strategy/key combinations for
+  both parsed configuration and direct library callers.
+- DuckDBTarget stages the incoming Arrow stream, rejects null or duplicate
+  key tuples, validates schema compatibility, then replaces matching rows and
+  inserts incoming rows in a transaction.
+- ParquetTarget stages incoming batches, applies the same key validation,
+  creates the merged output through DuckDB, and atomically replaces the
+  destination file.
+- Both targets initialize a missing destination from the incoming stream and
+  report the number of incoming rows written by an upsert.
+- Destination-derived high-watermark cursors are compatible with upsert as
+  well as append loads.
+- Source and destination schemas must match exactly. No implicit duplicate
+  ordering, null-key behavior, schema evolution, deletion synchronization, or
+  SCD2 history behavior was added.
+- Added coverage for merge parsing, single and composite key replacement,
+  null and duplicate source keys, and schema mismatch rejection for both
+  targets.
+
+Post-upsert cleanup completed
+-----------------------------
+- Made MergeConfiguration the single validation boundary for strategy/key
+  combinations; YAML parsing now only adapts configuration shape.
+- Kept shared upsert logic limited to key-field validation, incoming-key
+  validation, identifier quoting, and key-match SQL construction.
+- Made all Parquet writes publish through a temporary file and atomic
+  replacement, including replace and first-write append behavior.
+- Isolated DuckDB's matching-row replacement in an explicit transaction with
+  rollback on database errors.
+- Added failure-atomicity coverage: invalid Parquet upserts preserve the
+  existing file, and failed DuckDB inserts roll back preceding deletes.
+- Did not add a registry, pipeline executor, state manager, generic SQL
+  layer, or additional runtime abstraction.

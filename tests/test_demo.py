@@ -56,6 +56,7 @@ def test_derives_cursor_from_destination_for_append(tmp_path) -> None:
     destination = DuckDBTarget({"path": str(tmp_path / "warehouse.duckdb"), "table": "items"})
 
     assert _cursor_from_destination(connector, destination, MergeStrategy.APPEND) is None
+    assert _cursor_from_destination(connector, destination, MergeStrategy.UPSERT) is None
 
 
 def test_rejects_destination_cursor_without_append() -> None:
@@ -75,6 +76,6 @@ def test_rejects_destination_cursor_without_append() -> None:
 
     with pytest.raises(
         ValueError,
-        match="A destination-derived cursor requires merge strategy 'append'.",
+        match="A destination-derived cursor requires merge strategy 'append' or 'upsert'.",
     ):
         _cursor_from_destination(connector, destination, MergeStrategy.REPLACE)

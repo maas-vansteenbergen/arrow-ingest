@@ -9,7 +9,13 @@ from typing import Any
 import duckdb
 import pyarrow as pa
 
-from ..core import Cursor, MergeStrategy
+from ..core import Cursor, MergeConfiguration, MergeStrategy
+from ._upsert import (
+    key_match_condition,
+    quoted_identifier,
+    validate_incoming_keys,
+    validate_key_fields,
+)
 
 
 class DuckDBTarget:
@@ -26,7 +32,7 @@ class DuckDBTarget:
             if not _table_exists(connection, self._table):
                 return None
             value = connection.execute(
-                f"SELECT max({_quoted_identifier(field)}) FROM {_quoted_identifier(self._table)}"
+                f"SELECT max({quoted_identifier(field)}) FROM {quoted_identifier(self._table)}"
             ).fetchone()[0]
         finally:
             connection.close()
@@ -37,38 +43,87 @@ class DuckDBTarget:
             raise ValueError(f"Cursor field {field!r} in the DuckDB table must be an integer.")
         return Cursor(field, value)
 
-    def load(self, stream: pa.RecordBatchReader, strategy: MergeStrategy) -> int:
+    def load(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
         connection = duckdb.connect(self._database)
         try:
             connection.register("ingester_stream", stream)
-            if strategy is MergeStrategy.REPLACE:
+            if merge.strategy is MergeStrategy.REPLACE:
                 connection.execute(
-                    f"CREATE OR REPLACE TABLE {_quoted_identifier(self._table)} AS "
+                    f"CREATE OR REPLACE TABLE {quoted_identifier(self._table)} AS "
                     "SELECT * FROM ingester_stream"
                 )
                 row_count = _row_count(connection, self._table)
-            elif strategy is MergeStrategy.APPEND:
+            elif merge.strategy is MergeStrategy.APPEND:
                 if _table_exists(connection, self._table):
                     existing_row_count = _row_count(connection, self._table)
                     connection.execute(
-                        f"INSERT INTO {_quoted_identifier(self._table)} "
+                        f"INSERT INTO {quoted_identifier(self._table)} "
                         "SELECT * FROM ingester_stream"
                     )
                     row_count = _row_count(connection, self._table) - existing_row_count
                 else:
                     connection.execute(
-                        f"CREATE TABLE {_quoted_identifier(self._table)} AS "
+                        f"CREATE TABLE {quoted_identifier(self._table)} AS "
                         "SELECT * FROM ingester_stream"
                     )
                     row_count = _row_count(connection, self._table)
+            elif merge.strategy is MergeStrategy.UPSERT:
+                row_count = self._upsert_stream(connection, stream.schema, merge.keys)
             else:
-                raise ValueError(f"DuckDBTarget does not support merge strategy {strategy!r}.")
+                raise ValueError(
+                    f"DuckDBTarget does not support merge strategy {merge.strategy!r}."
+                )
         finally:
             connection.close()
 
         if not isinstance(row_count, int):
             raise AssertionError("DuckDB row count query did not return an integer.")
         return row_count
+
+    def _upsert_stream(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        schema: pa.Schema,
+        keys: tuple[str, ...],
+    ) -> int:
+        validate_key_fields(schema, keys)
+        connection.execute("CREATE TEMP TABLE ingester_input AS SELECT * FROM ingester_stream")
+        validate_incoming_keys(connection, "ingester_input", keys)
+        row_count = _row_count(connection, "ingester_input")
+
+        if not _table_exists(connection, self._table):
+            connection.execute(
+                f"CREATE TABLE {quoted_identifier(self._table)} AS SELECT * FROM ingester_input"
+            )
+            return row_count
+        if _table_schema(connection, self._table) != _table_schema(connection, "ingester_input"):
+            raise ValueError(
+                "Cannot upsert an Arrow stream with a different schema to DuckDB output."
+            )
+
+        self._replace_matching_rows(connection, keys)
+        return row_count
+
+    def _replace_matching_rows(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        keys: tuple[str, ...],
+    ) -> None:
+        connection.execute("BEGIN TRANSACTION")
+        try:
+            connection.execute(
+                f"DELETE FROM {quoted_identifier(self._table)} AS destination "
+                "USING ingester_input AS incoming "
+                f"WHERE {key_match_condition('destination', 'incoming', keys)}"
+            )
+            connection.execute(
+                f"INSERT INTO {quoted_identifier(self._table)} SELECT * FROM ingester_input"
+            )
+        except duckdb.Error:
+            connection.execute("ROLLBACK")
+            raise
+        else:
+            connection.execute("COMMIT")
 
 
 def _required_string(target: Mapping[str, Any], name: str) -> str:
@@ -89,10 +144,6 @@ def _column_name(value: str, name: str = "cursor field") -> None:
         raise ValueError(f"{name} must be an unqualified SQL identifier.")
 
 
-def _quoted_identifier(identifier: str) -> str:
-    return f'"{identifier}"'
-
-
 def _table_exists(connection: duckdb.DuckDBPyConnection, table: str) -> bool:
     return (
         connection.execute(
@@ -107,9 +158,14 @@ def _table_exists(connection: duckdb.DuckDBPyConnection, table: str) -> bool:
 
 
 def _row_count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
-    row_count = connection.execute(f"SELECT count(*) FROM {_quoted_identifier(table)}").fetchone()[
-        0
-    ]
+    row_count = connection.execute(f"SELECT count(*) FROM {quoted_identifier(table)}").fetchone()[0]
     if not isinstance(row_count, int):
         raise AssertionError("DuckDB row count query did not return an integer.")
     return row_count
+
+
+def _table_schema(connection: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str]]:
+    return [
+        (column[0], column[1])
+        for column in connection.execute(f"DESCRIBE {quoted_identifier(table)}").fetchall()
+    ]

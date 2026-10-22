@@ -7,11 +7,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from ..core import Cursor, MergeStrategy
+from ..core import Cursor, MergeConfiguration, MergeStrategy
+from ._upsert import key_match_condition, validate_incoming_keys, validate_key_fields
 
 
 class ParquetTarget:
@@ -38,17 +40,28 @@ class ParquetTarget:
                 value = batch_maximum
         return Cursor(field, value) if value is not None else None
 
-    def load(self, stream: pa.RecordBatchReader, strategy: MergeStrategy) -> int:
+    def load(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
         self._destination.parent.mkdir(parents=True, exist_ok=True)
-        if strategy is MergeStrategy.REPLACE:
-            return self._write_stream(self._destination, stream)
-        if strategy is MergeStrategy.APPEND:
+        if merge.strategy is MergeStrategy.REPLACE:
+            return self._replace_stream(stream)
+        if merge.strategy is MergeStrategy.APPEND:
             return self._append_stream(stream)
-        raise ValueError(f"ParquetTarget does not support merge strategy {strategy!r}.")
+        if merge.strategy is MergeStrategy.UPSERT:
+            return self._upsert_stream(stream, merge.keys)
+        raise ValueError(f"ParquetTarget does not support merge strategy {merge.strategy!r}.")
+
+    def _replace_stream(self, stream: pa.RecordBatchReader) -> int:
+        temporary_destination = _temporary_path(self._destination.parent)
+        try:
+            row_count = self._write_stream(temporary_destination, stream)
+            temporary_destination.replace(self._destination)
+            return row_count
+        finally:
+            temporary_destination.unlink(missing_ok=True)
 
     def _append_stream(self, stream: pa.RecordBatchReader) -> int:
         if not self._destination.exists():
-            return self._write_stream(self._destination, stream)
+            return self._replace_stream(stream)
 
         existing_file = pq.ParquetFile(self._destination)
         if existing_file.schema_arrow != stream.schema:
@@ -76,6 +89,56 @@ class ParquetTarget:
         finally:
             temporary_destination.unlink(missing_ok=True)
 
+    def _upsert_stream(self, stream: pa.RecordBatchReader, keys: tuple[str, ...]) -> int:
+        validate_key_fields(stream.schema, keys)
+        incoming_destination = _temporary_path(self._destination.parent)
+        output_destination = _temporary_path(self._destination.parent)
+        try:
+            row_count = self._write_stream(incoming_destination, stream)
+            output_destination.unlink()
+
+            connection = duckdb.connect()
+            try:
+                connection.execute(
+                    "CREATE VIEW incoming AS SELECT * FROM "
+                    f"read_parquet({_sql_string(incoming_destination)})",
+                )
+                validate_incoming_keys(connection, "incoming", keys)
+
+                if self._destination.exists():
+                    existing_file = pq.ParquetFile(self._destination)
+                    if (
+                        existing_file.schema_arrow
+                        != pq.ParquetFile(incoming_destination).schema_arrow
+                    ):
+                        raise ValueError(
+                            "Cannot upsert an Arrow stream with a different schema to Parquet output."
+                        )
+                    connection.execute(
+                        "CREATE VIEW existing AS SELECT * FROM "
+                        f"read_parquet({_sql_string(self._destination)})",
+                    )
+                    query = (
+                        "SELECT existing.* FROM existing "
+                        "WHERE NOT EXISTS ("
+                        "SELECT 1 FROM incoming "
+                        f"WHERE {key_match_condition('existing', 'incoming', keys)}"
+                        ") UNION ALL SELECT * FROM incoming"
+                    )
+                else:
+                    query = "SELECT * FROM incoming"
+                connection.execute(
+                    f"COPY ({query}) TO {_sql_string(output_destination)} (FORMAT PARQUET)",
+                )
+            finally:
+                connection.close()
+
+            output_destination.replace(self._destination)
+            return row_count
+        finally:
+            incoming_destination.unlink(missing_ok=True)
+            output_destination.unlink(missing_ok=True)
+
     @staticmethod
     def _write_stream(destination: Path, stream: pa.RecordBatchReader) -> int:
         row_count = 0
@@ -84,3 +147,14 @@ class ParquetTarget:
                 writer.write_batch(batch)
                 row_count += batch.num_rows
         return row_count
+
+
+def _temporary_path(directory: Path) -> Path:
+    with tempfile.NamedTemporaryFile(
+        dir=directory, suffix=".parquet", delete=False
+    ) as temporary_file:
+        return Path(temporary_file.name)
+
+
+def _sql_string(value: Path) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
