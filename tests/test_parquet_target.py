@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from ingester.core import MergeStrategy
+from ingester.core import Cursor, MergeStrategy
 from ingester.targets import ParquetTarget
 
 
@@ -56,3 +56,12 @@ def test_rejects_append_with_a_different_schema(tmp_path) -> None:
         match="Cannot append an Arrow stream with a different schema to Parquet output.",
     ):
         ParquetTarget({"path": str(destination)}).load(reader, MergeStrategy.APPEND)
+
+
+def test_reads_high_watermark_cursor_from_existing_output(tmp_path) -> None:
+    destination = tmp_path / "rows.parquet"
+    pq.write_table(pa.table({"id": [2, 4, 3]}), destination)
+
+    cursor = ParquetTarget({"path": str(destination)}).read_cursor("id")
+
+    assert cursor == Cursor(field="id", value=4)

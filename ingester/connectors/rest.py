@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 
 import pyarrow as pa
 
+from ..core import Cursor
+
 ARROW_TYPES = {
     "int64": pa.int64(),
     "float64": pa.float64(),
@@ -37,15 +39,32 @@ class _RequestControls:
     backoff_seconds: float
 
 
+@dataclass(frozen=True)
+class _HighWatermarkCursorConfiguration:
+    field: str
+    request_param: str
+
+
 class RestConnector:
     """Fetch a JSON collection from a configured REST endpoint."""
 
     def __init__(self, connector: Mapping[str, Any]) -> None:
         self._connector = connector
 
-    def read(self) -> pa.RecordBatchReader:
-        request = _request_configuration(self._connector)
+    def destination_cursor_field(self) -> str | None:
         schema = _schema(self._connector["schema"])
+        cursor = _high_watermark_cursor(self._connector.get("cursor"), schema)
+        return cursor.field if cursor is not None else None
+
+    def read(self, cursor: Cursor | None = None) -> pa.RecordBatchReader:
+        schema = _schema(self._connector["schema"])
+        cursor_configuration = _high_watermark_cursor(self._connector.get("cursor"), schema)
+        _validate_cursor(cursor, cursor_configuration)
+        request = _request_configuration(
+            self._connector,
+            cursor_configuration,
+            cursor,
+        )
         schema_policy = _schema_policy(self._connector.get("schema_policy"))
         records_path = self._connector["records_path"]
         pagination = self._connector.get("pagination")
@@ -70,11 +89,19 @@ class RestConnector:
         return pa.RecordBatchReader.from_batches(schema, batches)
 
 
-def _request_configuration(connector: Mapping[str, Any]) -> _RequestConfiguration:
+def _request_configuration(
+    connector: Mapping[str, Any],
+    cursor_configuration: _HighWatermarkCursorConfiguration | None,
+    cursor: Cursor | None,
+) -> _RequestConfiguration:
+    parameters = _static_query_parameters(connector.get("params"))
+    if cursor_configuration is not None and cursor is not None:
+        parameters[cursor_configuration.request_param] = str(cursor.value)
+
     return _RequestConfiguration(
         url=_with_query_parameters(
             connector["url"],
-            _static_query_parameters(connector.get("params")),
+            parameters,
         ),
         headers=_request_headers(
             connector.get("headers"),
@@ -86,6 +113,46 @@ def _request_configuration(connector: Mapping[str, Any]) -> _RequestConfiguratio
 
 def _schema(schema: Mapping[str, str]) -> pa.Schema:
     return pa.schema([pa.field(name, _arrow_type(type_name)) for name, type_name in schema.items()])
+
+
+def _high_watermark_cursor(
+    configured_cursor: Any,
+    schema: pa.Schema,
+) -> _HighWatermarkCursorConfiguration | None:
+    if configured_cursor is None:
+        return None
+    if not isinstance(configured_cursor, Mapping):
+        raise ValueError("connector.cursor must be a mapping.")
+    if configured_cursor.get("type") != "high_watermark":
+        raise ValueError("connector.cursor.type must be 'high_watermark'.")
+
+    field = configured_cursor.get("field")
+    request_param = configured_cursor.get("request_param")
+    if not isinstance(field, str) or not field:
+        raise ValueError("connector.cursor.field must be a non-empty string.")
+    if not isinstance(request_param, str) or not request_param:
+        raise ValueError("connector.cursor.request_param must be a non-empty string.")
+
+    field_index = schema.get_field_index(field)
+    if field_index == -1:
+        raise ValueError(f"connector.cursor.field {field!r} must be declared in connector.schema.")
+    if schema.field(field_index).type != pa.int64():
+        raise ValueError("connector.cursor.field must have declared type 'int64'.")
+    return _HighWatermarkCursorConfiguration(field=field, request_param=request_param)
+
+
+def _validate_cursor(
+    cursor: Cursor | None,
+    configuration: _HighWatermarkCursorConfiguration | None,
+) -> None:
+    if cursor is None:
+        return
+    if configuration is None:
+        raise ValueError("RestConnector received a cursor but connector.cursor is not configured.")
+    if cursor.field != configuration.field:
+        raise ValueError(
+            f"Cursor field {cursor.field!r} does not match configured field {configuration.field!r}."
+        )
 
 
 def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, Any]:

@@ -11,6 +11,7 @@ import pyarrow as pa
 import pytest
 
 from ingester.connectors import RestConnector, rest
+from ingester.core import Cursor
 
 
 def _json_response(payload: dict[str, Any]) -> BytesIO:
@@ -64,6 +65,50 @@ def test_selects_records_and_applies_declared_schema(
 
     assert table.schema == pa.schema([pa.field("id", pa.int64()), pa.field("title", pa.string())])
     assert table.to_pylist() == [{"id": 1, "title": "first"}, {"id": 2, "title": "second"}]
+
+
+def test_sends_destination_derived_high_watermark(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    requests: list[dict[str, list[str]]] = []
+
+    def urlopen(request: Any) -> BytesIO:
+        requests.append(parse_qs(urlsplit(request.full_url).query))
+        return _json_response({"items": [{"id": 3, "title": "new"}]})
+
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    connector = RestConnector(
+        rest_config(
+            cursor={
+                "type": "high_watermark",
+                "field": "id",
+                "request_param": "after_id",
+            }
+        )
+    )
+
+    reader = connector.read(Cursor(field="id", value=2))
+
+    assert reader.read_all().to_pylist() == [{"id": 3, "title": "new"}]
+    assert requests == [{"after_id": ["2"]}]
+
+
+def test_rejects_high_watermark_for_a_non_integer_schema_field(
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    connector = RestConnector(
+        rest_config(
+            cursor={
+                "type": "high_watermark",
+                "field": "title",
+                "request_param": "after_title",
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="connector.cursor.field must have declared type 'int64'."):
+        connector.destination_cursor_field()
 
 
 def test_strict_schema_policy_allows_null_for_nullable_fields(
