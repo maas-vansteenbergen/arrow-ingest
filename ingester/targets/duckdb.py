@@ -20,13 +20,30 @@ from ._upsert import (
 
 
 class DuckDBTarget:
-    """Write an Arrow stream to a table in a local DuckDB database."""
+    """Write an Arrow stream to a table in a local DuckDB database.
+
+    Args:
+        target: Target configuration containing the database ``path`` and
+            destination ``table``.
+    """
 
     def __init__(self, target: Mapping[str, Any]) -> None:
         self._database = _required_string(target, "path")
         self._table = _table_name(target)
 
     def read_cursor(self, field: str) -> Cursor | None:
+        """Read the largest persisted integer value for a table field.
+
+        Args:
+            field: The table column from which to derive a high-watermark.
+
+        Returns:
+            The current high-watermark, or ``None`` when the table is absent or
+            contains no values.
+
+        Raises:
+            ValueError: If the field is invalid or does not contain integers.
+        """
         _column_name(field)
         connection = duckdb.connect(self._database)
         try:
@@ -45,6 +62,19 @@ class DuckDBTarget:
         return Cursor(field, value)
 
     def load(self, stream: pa.RecordBatchReader, merge: MergeConfiguration) -> int:
+        """Load an Arrow stream into the configured DuckDB table.
+
+        Args:
+            stream: The incoming Arrow record batches.
+            merge: The merge strategy and its validated settings.
+
+        Returns:
+            The number of incoming rows written to the table.
+
+        Raises:
+            ValueError: If the merge strategy, input keys, or schemas are
+                incompatible with the destination.
+        """
         connection = duckdb.connect(self._database)
         try:
             connection.register("ingester_stream", stream)
