@@ -7,7 +7,9 @@ from collections.abc import Sequence
 import duckdb
 import pyarrow as pa
 
-from ..core import SCD2Configuration
+from ..core import MergeConfiguration, SCD2Configuration
+from ._duckdb_relations import row_count as duckdb_row_count
+from ._duckdb_relations import table_exists, table_schema
 from ._upsert import key_match_condition, quoted_identifier, validate_incoming_keys
 
 
@@ -21,9 +23,9 @@ def apply_scd2(
     _validate_source_schema(schema, keys, configuration)
     connection.execute("CREATE TEMP TABLE ingester_input AS SELECT * FROM ingester_stream")
     validate_incoming_keys(connection, "ingester_input", keys)
-    row_count = _row_count(connection, "ingester_input")
+    row_count = duckdb_row_count(connection, "ingester_input")
 
-    if not _table_exists(connection, destination):
+    if not table_exists(connection, destination):
         connection.execute(
             f"CREATE TABLE {quoted_identifier(destination)} AS "
             f"{_new_version_rows('ingester_input', configuration)}"
@@ -34,7 +36,7 @@ def apply_scd2(
         f"CREATE TEMP TABLE ingester_scd2_shape AS "
         f"{_new_version_rows('ingester_input', configuration)} LIMIT 0"
     )
-    if _table_schema(connection, destination) != _table_schema(connection, "ingester_scd2_shape"):
+    if table_schema(connection, destination) != table_schema(connection, "ingester_scd2_shape"):
         raise ValueError("Cannot apply SCD2 with a different source schema or metadata columns.")
 
     current = _current_rows(destination, configuration)
@@ -165,28 +167,7 @@ def _new_version_rows(relation: str, configuration: SCD2Configuration) -> str:
     )
 
 
-def _table_exists(connection: duckdb.DuckDBPyConnection, table: str) -> bool:
-    return (
-        connection.execute(
-            "SELECT EXISTS ("
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = current_schema() AND table_name = ?"
-            ")",
-            [table],
-        ).fetchone()[0]
-        is True
-    )
-
-
-def _row_count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
-    row_count = connection.execute(f"SELECT count(*) FROM {quoted_identifier(table)}").fetchone()[0]
-    if not isinstance(row_count, int):
-        raise AssertionError("DuckDB row count query did not return an integer.")
-    return row_count
-
-
-def _table_schema(connection: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str]]:
-    return [
-        (column[0], column[1])
-        for column in connection.execute(f"DESCRIBE {quoted_identifier(table)}").fetchall()
-    ]
+def scd2_configuration(merge: MergeConfiguration) -> SCD2Configuration:
+    if merge.scd2 is None:
+        raise AssertionError("SCD2 merge configuration is missing SCD2 settings.")
+    return merge.scd2
