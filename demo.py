@@ -67,9 +67,9 @@ def _cursor_from_destination(
     field = connector.destination_cursor_field()
     if field is None:
         return None
-    if strategy not in (MergeStrategy.APPEND, MergeStrategy.UPSERT):
+    if strategy not in (MergeStrategy.APPEND, MergeStrategy.SCD2, MergeStrategy.UPSERT):
         raise ValueError(
-            "A destination-derived cursor requires merge strategy 'append' or 'upsert'."
+            "A destination-derived cursor requires merge strategy 'append', 'upsert', or 'scd2'."
         )
     return destination.read_cursor(field)
 

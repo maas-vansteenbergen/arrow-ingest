@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from ingester.core import Cursor, MergeConfiguration, MergeStrategy
+from ingester.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
 from ingester.targets import ParquetTarget
 
 
@@ -133,3 +133,82 @@ def test_rejects_upsert_with_a_different_schema(tmp_path) -> None:
             reader,
             MergeConfiguration(MergeStrategy.UPSERT, ("id",)),
         )
+
+
+def test_tracks_scd2_history(tmp_path) -> None:
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("title", pa.string()),
+            pa.field("version", pa.int64()),
+        ]
+    )
+    destination = tmp_path / "rows.parquet"
+    target = ParquetTarget({"path": str(destination)})
+    merge = _scd2_merge()
+
+    target.load(
+        pa.RecordBatchReader.from_batches(
+            schema,
+            [
+                pa.RecordBatch.from_pydict(
+                    {"id": [1, 2], "title": ["one", "two"], "version": [10, 10]},
+                    schema=schema,
+                )
+            ],
+        ),
+        merge,
+    )
+    target.load(
+        pa.RecordBatchReader.from_batches(
+            schema,
+            [
+                pa.RecordBatch.from_pydict(
+                    {"id": [1, 2], "title": ["updated", "two"], "version": [20, 20]},
+                    schema=schema,
+                )
+            ],
+        ),
+        merge,
+    )
+
+    assert pq.read_table(destination).to_pylist() == [
+        {
+            "id": 1,
+            "title": "one",
+            "version": 10,
+            "valid_from": 10,
+            "valid_to": 20,
+            "is_current": False,
+        },
+        {
+            "id": 2,
+            "title": "two",
+            "version": 10,
+            "valid_from": 10,
+            "valid_to": None,
+            "is_current": True,
+        },
+        {
+            "id": 1,
+            "title": "updated",
+            "version": 20,
+            "valid_from": 20,
+            "valid_to": None,
+            "is_current": True,
+        },
+    ]
+
+
+def _scd2_merge() -> MergeConfiguration:
+    return MergeConfiguration(
+        MergeStrategy.SCD2,
+        ("id",),
+        SCD2Configuration(
+            tracked_fields=("title",),
+            effective_at="version",
+            valid_from="valid_from",
+            valid_to="valid_to",
+            is_current="is_current",
+        ),
+    )
