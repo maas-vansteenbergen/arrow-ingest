@@ -8,6 +8,31 @@ from arrow_ingest.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Con
 from arrow_ingest.targets import DuckDBTarget
 
 
+@pytest.mark.parametrize(
+    ("config", "error"),
+    [
+        (
+            {"path": "", "table": "products"},
+            "target.path must be a non-empty string.",
+        ),
+        (
+            {"path": ":memory:", "table": ""},
+            "target.table must be a non-empty string.",
+        ),
+        (
+            {"path": ":memory:", "table": "catalog.products"},
+            "target.table must be an unqualified SQL identifier.",
+        ),
+    ],
+)
+def test_rejects_invalid_target_configuration(
+    config: dict[str, object],
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        DuckDBTarget(config)
+
+
 def test_persists_multiple_arrow_batches(tmp_path) -> None:
     schema = pa.schema([pa.field("id", pa.int64())])
     reader = pa.RecordBatchReader.from_batches(

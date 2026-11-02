@@ -94,20 +94,55 @@ def test_sends_destination_derived_high_watermark(
     assert requests == [{"after_id": ["2"]}]
 
 
-def test_rejects_high_watermark_for_a_non_integer_schema_field(
-    rest_config: Callable[..., dict[str, Any]],
-) -> None:
-    connector = RestConnector(
-        rest_config(
-            cursor={
+@pytest.mark.parametrize(
+    ("cursor", "error"),
+    [
+        (
+            [],
+            "connector.cursor must be a mapping.",
+        ),
+        (
+            {},
+            "connector.cursor.type must be 'high_watermark'.",
+        ),
+        (
+            {"type": "offset"},
+            "connector.cursor.type must be 'high_watermark'.",
+        ),
+        (
+            {
+                "type": "high_watermark",
+                "field": "missing",
+                "request_param": "after_id",
+            },
+            "connector.cursor.field 'missing' must be declared in connector.schema.",
+        ),
+        (
+            {
                 "type": "high_watermark",
                 "field": "title",
                 "request_param": "after_title",
-            }
-        )
-    )
+            },
+            "connector.cursor.field must have declared type 'int64'.",
+        ),
+        (
+            {
+                "type": "high_watermark",
+                "field": "id",
+                "request_param": "",
+            },
+            "connector.cursor.request_param must be a non-empty string.",
+        ),
+    ],
+)
+def test_rejects_invalid_high_watermark_cursor_configuration(
+    rest_config: Callable[..., dict[str, Any]],
+    cursor: object,
+    error: str,
+) -> None:
+    connector = RestConnector(rest_config(cursor=cursor))
 
-    with pytest.raises(ValueError, match="connector.cursor.field must have declared type 'int64'."):
+    with pytest.raises(ValueError, match=error):
         connector.destination_cursor_field()
 
 

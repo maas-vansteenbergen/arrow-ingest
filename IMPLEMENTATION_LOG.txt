@@ -107,9 +107,9 @@ Current roadmap: configuration contract and user experience
   - [x] Inventory every supported YAML field, default, and accepted value.
   - [x] Add configuration-behavior tests for existing REST connector YAML.
   - [x] Add configuration-behavior tests for existing Parquet connector YAML.
-  - [ ] Add configuration-behavior tests for existing DuckDB and Parquet
+  - [x] Add configuration-behavior tests for existing DuckDB and Parquet
     target YAML.
-  - [ ] Add configuration-behavior tests for existing merge and cursor YAML.
+  - [x] Add configuration-behavior tests for existing merge and cursor YAML.
   - [ ] Document YAML behavior only after its corresponding tests establish
     the supported contract.
 
