@@ -2,26 +2,31 @@
 
 [![CI](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml)
 
-Use `arrow-ingest` to move data from a supported source to a supported target
-through an Arrow stream. It keeps ingestion configuration explicit without
-adding a pipeline runtime or hidden metadata columns.
+`arrow-ingest` is a small, Arrow-native ingestion library. It moves data from
+a supported source to a supported target through an Arrow stream, while keeping
+configuration explicit and avoiding a pipeline runtime or hidden metadata
+columns.
 
-You can:
+It currently supports:
 
-- Read REST JSON APIs and local Parquet files.
-- Write local Parquet files and DuckDB tables.
-- Replace, append, upsert, or retain SCD2 history.
+- REST JSON APIs and local Parquet files as sources.
+- Local Parquet files and DuckDB tables as targets.
+- Replace, append, upsert, and SCD2 merge strategies.
 
-## Use one Arrow data boundary
+## Why this exists
 
-Connectors produce `pyarrow.RecordBatchReader` streams. Targets consume those
-streams and apply an explicit merge strategy. This is the only data contract
-between sources and targets.
+Ingestion libraries can easily acquire separate data paths, intermediate data
+models, and orchestration concepts for every source and destination. Those
+abstractions are often unnecessary when a connector can read a source, produce
+an Arrow stream, and let a target apply an explicit merge strategy.
 
-New integrations use this boundary instead of creating a separate data path or
-intermediate data model. Arrow carries an explicit schema with the batches, so
-the library can validate types while streaming data without loading the entire
-source into memory.
+`arrow-ingest` deliberately keeps that boundary small. Connectors produce
+`pyarrow.RecordBatchReader` streams, and targets consume them. New integrations
+adapt to the same contract instead of creating a separate data path.
+
+Arrow carries an explicit schema with each batch. This makes type handling
+predictable while allowing data to stream without materializing the entire
+source in memory.
 
 ## Architecture
 
