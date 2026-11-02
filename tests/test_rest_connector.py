@@ -156,11 +156,93 @@ def test_strict_schema_policy_rejects_type_mismatches(
         RestConnector(rest_config(schema_policy="strict")).read()
 
 
-def test_rejects_unsupported_schema_policy(
+@pytest.mark.parametrize(
+    ("type_name", "value", "expected_type"),
+    [
+        ("int64", 1, pa.int64()),
+        ("float64", 1.5, pa.float64()),
+        ("string", "first", pa.string()),
+        ("bool", True, pa.bool_()),
+    ],
+)
+def test_accepts_supported_declared_schema_types(
     rest_config: Callable[..., dict[str, Any]],
+    mock_json_response: Callable[[dict[str, Any]], None],
+    type_name: str,
+    value: object,
+    expected_type: pa.DataType,
 ) -> None:
-    with pytest.raises(ValueError, match=r"connector.schema_policy must be 'strict'."):
-        RestConnector(rest_config(schema_policy="cast")).read()
+    mock_json_response({"items": [{"value": value}]})
+
+    table = RestConnector(rest_config(schema={"value": type_name})).read().read_all()
+
+    assert table.schema == pa.schema([pa.field("value", expected_type)])
+    assert table.to_pylist() == [{"value": value}]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        (
+            {"schema_policy": "cast"},
+            "connector.schema_policy must be 'strict'.",
+        ),
+        (
+            {"params": {"page": 1}},
+            "connector.params must use string values.",
+        ),
+        (
+            {"headers": {"Accept": 1}},
+            "connector.headers must use string values.",
+        ),
+        (
+            {"auth": {"type": "basic"}},
+            "connector.auth.type must be 'bearer'.",
+        ),
+        (
+            {"pagination": {"type": "cursor"}},
+            "connector.pagination.type must be 'offset'.",
+        ),
+        (
+            {"pagination": {"type": "offset"}},
+            "connector.pagination must define non-empty offset_param, limit_param, and total_path values.",
+        ),
+        (
+            {
+                "pagination": {
+                    "type": "offset",
+                    "offset_param": "offset",
+                    "limit_param": "limit",
+                    "page_size": True,
+                    "total_path": "total",
+                }
+            },
+            "connector.pagination.page_size must be a positive integer.",
+        ),
+        (
+            {"request": {"timeout_seconds": 0}},
+            "connector.request.timeout_seconds must be a positive number.",
+        ),
+        (
+            {"request": {"retries": -1}},
+            "connector.request.retries must be a non-negative integer.",
+        ),
+        (
+            {"request": {"backoff_seconds": -1}},
+            "connector.request.backoff_seconds must be a non-negative number.",
+        ),
+    ],
+)
+def test_rejects_invalid_rest_configuration_values(
+    rest_config: Callable[..., dict[str, Any]],
+    mock_json_response: Callable[[dict[str, Any]], None],
+    overrides: dict[str, Any],
+    error: str,
+) -> None:
+    mock_json_response({"items": [{"id": 1, "title": "first"}]})
+
+    with pytest.raises(ValueError, match=error):
+        RestConnector(rest_config(**overrides)).read()
 
 
 def test_sends_bearer_token_from_environment(
@@ -363,15 +445,3 @@ def test_does_not_retry_non_retryable_http_errors(
 
     assert attempts == 1
     assert delays == []
-
-
-def test_rejects_unsupported_pagination_type(
-    rest_config: Callable[..., dict[str, Any]],
-) -> None:
-    with pytest.raises(ValueError, match=r"connector.pagination.type must be 'offset'."):
-        RestConnector(
-            rest_config(
-                schema={"id": "int64"},
-                pagination={"type": "cursor"},
-            )
-        ).read()
