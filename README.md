@@ -33,7 +33,7 @@ source in memory.
 ```mermaid
 flowchart LR
     Connector["Connector<br/>Reads from an external system"]
-    Stream["Arrow stream<br/>pyarrow.RecordBatchReader"]
+    Stream["Arrow stream"]
     Target["Target<br/>Writes to a destination using a merge strategy"]
 
     Connector --> Stream
