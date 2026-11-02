@@ -8,6 +8,22 @@ from arrow_ingest.targets import DuckDBTarget, ParquetTarget
 from demo import _connector_from_config, _cursor_from_destination, _target_from_config
 
 
+@pytest.fixture
+def high_watermark_connector() -> RestConnector:
+    return RestConnector(
+        {
+            "url": "https://example.test/items",
+            "records_path": "items",
+            "schema": {"id": "int64"},
+            "cursor": {
+                "type": "high_watermark",
+                "field": "id",
+                "request_param": "after_id",
+            },
+        }
+    )
+
+
 @pytest.mark.parametrize(
     ("config", "expected_type"),
     [
@@ -40,43 +56,27 @@ def test_rejects_unknown_target_type() -> None:
         _target_from_config({"type": "sqlite"})
 
 
-def test_derives_cursor_from_destination_for_append(tmp_path) -> None:
-    connector = RestConnector(
-        {
-            "url": "https://example.test/items",
-            "records_path": "items",
-            "schema": {"id": "int64"},
-            "cursor": {
-                "type": "high_watermark",
-                "field": "id",
-                "request_param": "after_id",
-            },
-        }
-    )
+@pytest.mark.parametrize(
+    "strategy",
+    [MergeStrategy.APPEND, MergeStrategy.UPSERT, MergeStrategy.SCD2],
+)
+def test_derives_cursor_from_destination_for_incremental_merges(
+    tmp_path,
+    high_watermark_connector: RestConnector,
+    strategy: MergeStrategy,
+) -> None:
     destination = DuckDBTarget({"path": str(tmp_path / "warehouse.duckdb"), "table": "items"})
 
-    assert _cursor_from_destination(connector, destination, MergeStrategy.APPEND) is None
-    assert _cursor_from_destination(connector, destination, MergeStrategy.UPSERT) is None
-    assert _cursor_from_destination(connector, destination, MergeStrategy.SCD2) is None
+    assert _cursor_from_destination(high_watermark_connector, destination, strategy) is None
 
 
-def test_rejects_destination_cursor_without_append() -> None:
-    connector = RestConnector(
-        {
-            "url": "https://example.test/items",
-            "records_path": "items",
-            "schema": {"id": "int64"},
-            "cursor": {
-                "type": "high_watermark",
-                "field": "id",
-                "request_param": "after_id",
-            },
-        }
-    )
+def test_rejects_destination_cursor_without_incremental_merge(
+    high_watermark_connector: RestConnector,
+) -> None:
     destination = DuckDBTarget({"path": ":memory:", "table": "items"})
 
     with pytest.raises(
         ValueError,
         match="A destination-derived cursor requires merge strategy 'append', 'upsert', or 'scd2'.",
     ):
-        _cursor_from_destination(connector, destination, MergeStrategy.REPLACE)
+        _cursor_from_destination(high_watermark_connector, destination, MergeStrategy.REPLACE)

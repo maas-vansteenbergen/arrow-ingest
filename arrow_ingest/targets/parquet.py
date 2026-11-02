@@ -25,7 +25,10 @@ class ParquetTarget:
     """
 
     def __init__(self, target: Mapping[str, Any]) -> None:
-        self._destination = Path(target["path"])
+        path = target.get("path")
+        if not isinstance(path, str) or not path:
+            raise ValueError("target.path must be a non-empty string.")
+        self._destination = Path(path)
 
     def read_cursor(self, field: str) -> Cursor | None:
         """Read the largest persisted integer value for a Parquet field.

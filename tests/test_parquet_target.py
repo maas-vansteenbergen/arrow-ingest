@@ -8,6 +8,12 @@ from arrow_ingest.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Con
 from arrow_ingest.targets import ParquetTarget
 
 
+@pytest.mark.parametrize("config", [{}, {"path": None}, {"path": ""}])
+def test_rejects_missing_or_empty_configured_path(config: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="target.path must be a non-empty string."):
+        ParquetTarget(config)
+
+
 def test_persists_multiple_arrow_batches(tmp_path) -> None:
     schema = pa.schema([pa.field("id", pa.int64())])
     reader = pa.RecordBatchReader.from_batches(
