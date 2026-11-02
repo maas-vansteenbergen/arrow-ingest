@@ -89,21 +89,51 @@ Important constraints and deferred behavior
   deletion/tombstone semantics, schema evolution, source-order repair, or
   opaque cursors.
 
-Next roadmap: hardening and demo readiness
--------------------------------------------
+Next roadmap: alpha and capability growth
+-----------------------------------------
 
-- [x] Cross-project cleanup and refactoring
-- [x] Public documentation
-- [x] Add MIT open-source license
-- [x] Add visible GitHub Actions CI status reporting
-- [x] Coverage measurement and CI reporting
-- [x] Add a README architecture diagram for the Arrow stream boundary
-- [x] Add a README "Why this exists" section explaining the minimal,
-  Arrow-native design
-- [x] Dependabot and dependency/workflow hygiene
-- [x] Essential security tooling
-- [x] Thorough security risk scan and remediation
-- [x] Add a CONTRIBUTING.md
+- [ ] Establish semantic versioning and release discipline
+  - [ ] Publish an initial alpha release and document the compatibility promise
+    for `0.x` versions.
+  - [ ] Define the versioning, changelog, tag, and release-note workflow before
+    expanding the public API.
+
+- [ ] Add Arrow-preserving declarative transformations
+  - [ ] Implement selection, renaming, casting, derivation, and filtering as
+    stream-to-stream operations.
+  - [ ] Keep Polars, if used, an internal implementation detail rather than a
+    public data contract.
+
+- [ ] Evolve cursor correctness and incremental loading
+  - [ ] Support timestamp-like and tuple destination-derived watermarks,
+    including explicit tie-breaker and lookback policies.
+  - [ ] Add opaque source cursors only when a source cannot be resumed from
+    destination data, and advance them only after a successful load.
+
+- [ ] Complete the planned source connector foundation
+  - [ ] Add local CSV and JSON Lines connectors using the existing Arrow stream
+    contract.
+  - [ ] Add ADBC connectors for supported databases without creating a separate
+    data path or framework runtime.
+
+- [ ] Deepen reusable HTTP connector capabilities
+  - [ ] Add cursor and next-link pagination plus explicit rate-limit behavior.
+  - [ ] Add broadly reusable authentication patterns, starting with API keys and
+    Basic authentication; defer OAuth, mTLS, signing, and SDK-specific
+    patterns until a concrete reusable requirement exists.
+
+- [ ] Expand destination support deliberately
+  - [ ] Add ADBC targets where their loading semantics support the selected merge
+    strategy correctly.
+  - [ ] Evaluate Iceberg and Delta targets only with a strong Arrow ingestion
+    story and explicit merge, publication, and schema policies.
+  - [ ] Add Parquet dataset-directory mode only after defining schema,
+    concurrency, publication, and compaction behavior.
+
+- [ ] Improve operational visibility without becoming an orchestrator
+  - [ ] Emit structured logs, metrics, and load statistics for troubleshooting.
+  - [ ] Leave scheduling, orchestration, lineage, auditing, and governance to
+    dedicated external systems and destination metadata.
 
 Documentation and typing update
 -------------------------------
