@@ -4,8 +4,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from ingester.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
-from ingester.targets import ParquetTarget
+from arrow_ingest.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
+from arrow_ingest.targets import ParquetTarget
 
 
 def test_persists_multiple_arrow_batches(tmp_path) -> None:

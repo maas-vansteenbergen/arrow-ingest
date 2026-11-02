@@ -79,11 +79,11 @@ class DuckDBTarget:
         """
         connection = duckdb.connect(self._database)
         try:
-            connection.register("ingester_stream", stream)
+            connection.register("arrow_ingest_stream", stream)
             if merge.strategy is MergeStrategy.REPLACE:
                 connection.execute(
                     f"CREATE OR REPLACE TABLE {quoted_identifier(self._table)} AS "
-                    "SELECT * FROM ingester_stream"
+                    "SELECT * FROM arrow_ingest_stream"
                 )
                 row_count = duckdb_row_count(connection, self._table)
             elif merge.strategy is MergeStrategy.APPEND:
@@ -91,13 +91,13 @@ class DuckDBTarget:
                     existing_row_count = duckdb_row_count(connection, self._table)
                     connection.execute(
                         f"INSERT INTO {quoted_identifier(self._table)} "
-                        "SELECT * FROM ingester_stream"
+                        "SELECT * FROM arrow_ingest_stream"
                     )
                     row_count = duckdb_row_count(connection, self._table) - existing_row_count
                 else:
                     connection.execute(
                         f"CREATE TABLE {quoted_identifier(self._table)} AS "
-                        "SELECT * FROM ingester_stream"
+                        "SELECT * FROM arrow_ingest_stream"
                     )
                     row_count = duckdb_row_count(connection, self._table)
             elif merge.strategy is MergeStrategy.UPSERT:
@@ -128,16 +128,18 @@ class DuckDBTarget:
         keys: tuple[str, ...],
     ) -> int:
         validate_key_fields(schema, keys)
-        connection.execute("CREATE TEMP TABLE ingester_input AS SELECT * FROM ingester_stream")
-        validate_incoming_keys(connection, "ingester_input", keys)
-        row_count = duckdb_row_count(connection, "ingester_input")
+        connection.execute(
+            "CREATE TEMP TABLE arrow_ingest_input AS SELECT * FROM arrow_ingest_stream"
+        )
+        validate_incoming_keys(connection, "arrow_ingest_input", keys)
+        row_count = duckdb_row_count(connection, "arrow_ingest_input")
 
         if not table_exists(connection, self._table):
             connection.execute(
-                f"CREATE TABLE {quoted_identifier(self._table)} AS SELECT * FROM ingester_input"
+                f"CREATE TABLE {quoted_identifier(self._table)} AS SELECT * FROM arrow_ingest_input"
             )
             return row_count
-        if table_schema(connection, self._table) != table_schema(connection, "ingester_input"):
+        if table_schema(connection, self._table) != table_schema(connection, "arrow_ingest_input"):
             raise ValueError(
                 "Cannot upsert an Arrow stream with a different schema to DuckDB output."
             )
@@ -154,11 +156,11 @@ class DuckDBTarget:
         try:
             connection.execute(
                 f"DELETE FROM {quoted_identifier(self._table)} AS destination "
-                "USING ingester_input AS incoming "
+                "USING arrow_ingest_input AS incoming "
                 f"WHERE {key_match_condition('destination', 'incoming', keys)}"
             )
             connection.execute(
-                f"INSERT INTO {quoted_identifier(self._table)} SELECT * FROM ingester_input"
+                f"INSERT INTO {quoted_identifier(self._table)} SELECT * FROM arrow_ingest_input"
             )
         except duckdb.Error:
             connection.execute("ROLLBACK")

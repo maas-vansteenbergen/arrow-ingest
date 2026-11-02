@@ -9,15 +9,15 @@ from typing import Any
 
 import yaml
 
-from ingester.connectors import ParquetConnector, RestConnector
-from ingester.core import (
+from arrow_ingest.connectors import ParquetConnector, RestConnector
+from arrow_ingest.core import (
     Connector,
     Cursor,
     MergeStrategy,
     Target,
     parse_merge_configuration,
 )
-from ingester.targets import DuckDBTarget, ParquetTarget
+from arrow_ingest.targets import DuckDBTarget, ParquetTarget
 
 
 def main() -> None:

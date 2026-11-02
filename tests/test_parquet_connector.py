@@ -3,7 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ingester.connectors import ParquetConnector
+from arrow_ingest.connectors import ParquetConnector
 
 
 def test_emits_native_arrow_batches(tmp_path) -> None:

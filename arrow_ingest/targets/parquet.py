@@ -177,21 +177,21 @@ class ParquetTarget:
             output_destination.unlink()
             connection = duckdb.connect()
             try:
-                connection.register("ingester_stream", stream)
+                connection.register("arrow_ingest_stream", stream)
                 if self._destination.exists():
                     connection.execute(
-                        "CREATE TABLE ingester_destination AS SELECT * FROM "
+                        "CREATE TABLE arrow_ingest_destination AS SELECT * FROM "
                         f"read_parquet({_sql_string(self._destination)})"
                     )
                 row_count = apply_scd2(
                     connection,
-                    "ingester_destination",
+                    "arrow_ingest_destination",
                     stream.schema,
                     merge.keys,
                     scd2_configuration(merge),
                 )
                 connection.execute(
-                    f"COPY ingester_destination TO {_sql_string(output_destination)} "
+                    f"COPY arrow_ingest_destination TO {_sql_string(output_destination)} "
                     "(FORMAT PARQUET)"
                 )
             finally:

@@ -10,8 +10,8 @@ from urllib.parse import parse_qs, urlsplit
 import pyarrow as pa
 import pytest
 
-from ingester.connectors import RestConnector, rest
-from ingester.core import Cursor
+from arrow_ingest.connectors import RestConnector, rest
+from arrow_ingest.core import Cursor
 
 
 def _json_response(payload: dict[str, Any]) -> BytesIO:
