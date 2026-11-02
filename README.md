@@ -186,21 +186,31 @@ and return the number of incoming rows written.
 
 ## Development
 
-Run the tests and lint checks with:
+Install [just](https://just.systems/) to run the local development commands:
 
 ```console
-uv run pytest
-uv run ruff check .
+just --list
+just check
 ```
+
+`just check` synchronizes locked dependencies, then runs tests, linting, and
+formatting checks. `just release-check` additionally builds the source
+distribution and wheel.
 
 Generate a branch-coverage report with missing lines:
 
 ```console
-uv run pytest --cov --cov-report=term-missing --cov-report=html --cov-report=xml
+just coverage
 ```
 
 The HTML report is written to `htmlcov/index.html` and the XML report to
 `coverage.xml`. CI uploads both as the `coverage-report` workflow artifact.
+
+## Releases
+
+The project is currently in the `0.x` alpha series. See
+[CHANGELOG.md](./CHANGELOG.md) for release notes and
+[RELEASING.md](./RELEASING.md) for the versioning and release process.
 
 ## Contributing
 
