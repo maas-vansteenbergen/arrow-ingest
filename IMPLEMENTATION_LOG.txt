@@ -19,6 +19,10 @@ Current architecture
   terminal, XML, and HTML reports as a workflow artifact.
 - All Actions used by CI are pinned to immutable commit SHAs. The uv setup
   action uses its built-in dependency cache.
+- Dependabot checks uv dependencies and GitHub Actions weekly for available
+  updates.
+- CodeQL runs extended Python security analysis for pull requests and changes
+  to `main`, plus a weekly scheduled scan.
 
 Implemented connectors
 ----------------------
@@ -96,9 +100,9 @@ Next roadmap: hardening and demo readiness
 - [x] Add a README architecture diagram for the Arrow stream boundary
 - [x] Add a README "Why this exists" section explaining the minimal,
   Arrow-native design
-- [ ] Dependabot and dependency/workflow hygiene
-- [ ] Essential security tooling
-- [ ] Thorough security risk scan and remediation
+- [x] Dependabot and dependency/workflow hygiene
+- [x] Essential security tooling
+- [x] Thorough security risk scan and remediation
 - [ ] Add a CONTRIBUTING.md
 
 Documentation and typing update
