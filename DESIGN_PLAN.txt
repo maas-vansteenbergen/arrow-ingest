@@ -38,20 +38,8 @@ Core contracts
    - The strategy set is append, replace, upsert, and SCD2.
    - Each target must reject strategies it cannot implement correctly.
    - State is retained only when required by the selected strategy.
-   - Upsert is configured as a merge mapping with `strategy: upsert` and one
-     or more `keys`.
-   - Upsert replaces destination records whose key tuple matches an incoming
-     record and retains destination records with no matching incoming key.
-   - Incoming upsert keys must be non-null and unique within a load. Duplicate
-     or null keys are rejected rather than resolved by an implicit ordering
-     rule.
-   - Upsert requires compatible source and destination schemas. A missing
-     destination is initialized from the incoming stream.
-   - SCD2 retains history by business key and uses explicitly configured
-     version-boundary and metadata fields; it must not add hidden columns.
-   - Version boundaries come from ordered source data, not ingestion time.
-   - SCD2 versions only when configured business attributes change and
-     requires deterministic source ordering.
+   - Merge behavior is explicit, validated, and does not add hidden metadata
+     columns.
 
 Declarative configuration
 -------------------------
@@ -60,126 +48,40 @@ Configuration describes how data moves from a connector, through optional
 Arrow-preserving transformations, into a target. Configuration is not a
 Pipeline runtime abstraction.
 
-- Common HTTP behavior must be configurable: authentication, pagination,
-  request parameters and headers, timeouts, retries, rate limits, and schema
-  handling.
-- The initial HTTP pagination model is offset-based, defined by offset and
-  limit parameter names, page size, and a response total path.
-- `connector.auth` owns the Authorization header, preventing configured
-  headers from overriding credential-derived authentication.
-- The initial HTTP authentication model is bearer tokens resolved from named
-  environment variables. Bearer authentication owns the Authorization header.
-- Authentication configuration contains credential references, never plaintext
-  credentials. Credentials are resolved from named environment variables or a
-  supported secret-provider integration.
-- Future machine-to-machine authentication models may include API keys in
-  headers or query parameters, HTTP Basic authentication, and OAuth 2.0
-  client-credentials authentication with token refresh.
-- Scheduled ingestion must run non-interactively.
-- OAuth refresh tokens may be established through an out-of-band
-  authorization-code or device flow. Credential bootstrap is separate from
-  connector execution and stores resulting credentials through the configured
-  secret mechanism.
-- Custom request signing, mutual TLS, and SDK-specific authentication are not
-  initial core capabilities, but may be added when they represent reusable
-  connector requirements.
-- New authentication models must represent broadly reusable HTTP patterns and
-  preserve predictable, testable configuration semantics.
-- Request reliability uses optional timeouts, bounded retries for transport
-  failures and retryable HTTP responses, and exponential backoff.
-- Schema handling defaults to strict projection: every declared field must be
-  present with its declared primitive type; undeclared source fields are
-  ignored; null is allowed only for nullable Arrow fields.
-- Custom Python is an escape hatch for genuinely unusual APIs. If a common
-  ingestion pattern requires custom code, the declarative model is incomplete.
+- Configuration is explicit, declarative, and validated before execution.
+- Authentication uses credential references rather than plaintext secrets.
+- Common protocol behavior belongs in reusable connector configuration.
+- A common use case should not require custom Python to express it.
 
 Supported scope
 ---------------
 
-The planned connector scope includes:
-
-- local Parquet files;
-- flat files, including CSV and JSON Lines;
-- databases with ADBC support; and
-- HTTP APIs.
-
-The implemented connector scope is deliberately smaller: local Parquet files
-and configured HTTP JSON collection endpoints. CSV, JSON Lines, and ADBC
-connectors remain planned work rather than alternate internal data paths.
-
-Object storage is a location for file connectors, not a separate connector
-category. Message queues and streams, CDC and replication protocols,
-spreadsheets, and SDK-only integrations are outside the initial scope.
-
-Targets must have a strong Arrow ingestion story. Candidate targets include
-Parquet, DuckDB, Iceberg, Delta, and databases supported through ADBC, such as
-Postgres and Snowflake. Standardized ADBC loading paths are preferred where
-they provide the required destination behavior; destination-specific loading
-is acceptable when necessary.
-
-Parquet target layout
----------------------
-
-- A single-file Parquet target treats its configured path as one local Parquet
-  file.
-- Single-file writes must publish atomically.
-- Single-file append prioritizes data integrity over write efficiency. Because
-  a Parquet footer finalizes file metadata, append creates a replacement from
-  existing and incoming Arrow batches rather than modifying a file in place.
-- Single-file targets are appropriate for modest datasets and infrequent
-  appends; they are not intended to optimize repeated large appends.
-- A future dataset-directory mode may append immutable Parquet fragments. It
-  requires explicit policies for schema compatibility, publication,
-  concurrency, and compaction.
+- Connectors cover local files, HTTP APIs, and databases with ADBC support.
+- Targets must provide a strong Arrow ingestion story. Parquet, DuckDB,
+  Iceberg, Delta, and ADBC-compatible databases are candidate targets.
+- Object storage is a location for file connectors, not a connector category.
+- Message queues, CDC, spreadsheets, and SDK-only integrations are outside
+  the initial scope.
 
 State and cursors
 -----------------
 
-- State should be derived from destination data whenever possible.
-- Incremental loading should use loaded data or values derived through
-  declarative transformations.
-- Future transformations may create timestamps, version markers, hashes, or
-  similar values required for incremental loading and merge strategies.
-- The framework must not add hidden ingestion metadata columns to user data.
-- Cursor is a first-class runtime concept with three distinct concerns:
-  definition, position, and resolution.
-  - A cursor definition declares the ordered source field or fields, comparison
-    semantics, source request binding, optional initial boundary, and lookback
-    policy.
-  - A cursor position contains only the resolved progress values needed to
-    resume a connector.
-  - Cursor resolution obtains a position from destination data where possible,
-    or from persisted source-protocol state only when that position cannot be
-    derived.
-- Connectors own cursor semantics. Targets provide the minimum destination
-  query capability needed to derive configured cursor positions.
-- The design supports two cursor modes:
-  - A destination-derived watermark is an ordered field tuple read from
-    destination data. Connectors bind its values to source request parameters.
-    Watermarks may use numeric or timestamp-like values.
-  - An opaque source cursor is a source-defined continuation or delta token.
-    It is persisted only when a source cannot be resumed from destination
-    data.
-- Cursor positions are resolved before a connector reads and advance only
-  after the destination load succeeds. Failed or partial loads must not
-  advance cursor state.
-- A scalar watermark is correct only when it is strictly increasing and
-  unique. Sources that can emit tied values require a lexicographically ordered
-  tie-breaker or an explicit overlap-and-deduplication policy.
-- Cursor support must not introduce a Pipeline, StateManager, or CursorManager
-  runtime abstraction.
-- The implemented cursor primitive is narrower: a destination-derived `int64`
-  high watermark bound to an HTTP request parameter. Tuple, timestamp-like,
-  lookback, and opaque cursor positions remain future design work.
+- Derive state from destination data whenever possible.
+- Connectors own cursor semantics; targets expose only the destination queries
+  needed to resolve cursor positions.
+- Resolve cursor positions before reading and advance them only after a
+  successful load.
+- Persist opaque source state only when it cannot be derived from the
+  destination.
+- Cursor support must not introduce a state-management runtime abstraction or
+  hidden metadata columns.
 
 Transformations
 ---------------
 
 - Transformations consume Arrow streams and emit Arrow streams.
-- Polars may be used internally for normalization, casting, and
-  transformations; it is not part of the public data contract.
-- Declarative transformations will cover selection, renaming, casting,
-  deriving, and filtering; none are implemented yet.
+- Polars is the internal transformation engine; Arrow remains the public data
+  contract.
 - Complex business logic, analytical modeling, aggregation, and cross-dataset
   joins are outside the ingestion framework.
 

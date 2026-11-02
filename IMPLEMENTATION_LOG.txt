@@ -17,6 +17,8 @@ Current architecture
 - Dependencies are uv-managed. CI runs locked synchronization, Ruff lint and
   format checks, and pytest. A separate Python 3.12 coverage job publishes
   terminal, XML, and HTML reports as a workflow artifact.
+- A justfile provides matching local commands for development, coverage, builds,
+  and release checks.
 - All Actions used by CI are pinned to immutable commit SHAs. The uv setup
   action uses its built-in dependency cache.
 - Dependabot checks uv dependencies and GitHub Actions weekly for available
@@ -93,16 +95,16 @@ Next roadmap: alpha and capability growth
 -----------------------------------------
 
 - [ ] Establish semantic versioning and release discipline
-  - [ ] Publish an initial alpha release and document the compatibility promise
-    for `0.x` versions.
-  - [ ] Define the versioning, changelog, tag, and release-note workflow before
+  - [ ] Publish the prepared `v0.1.0-alpha.1` release from `main`.
+  - [x] Document the compatibility promise for `0.x` versions.
+  - [x] Define the versioning, changelog, tag, and release-note workflow before
     expanding the public API.
 
 - [ ] Add Arrow-preserving declarative transformations
   - [ ] Implement selection, renaming, casting, derivation, and filtering as
     stream-to-stream operations.
-  - [ ] Keep Polars, if used, an internal implementation detail rather than a
-    public data contract.
+  - [ ] Use Polars as the internal transformation engine without exposing it as
+    the public data contract.
 
 - [ ] Evolve cursor correctness and incremental loading
   - [ ] Support timestamp-like and tuple destination-derived watermarks,
@@ -134,6 +136,8 @@ Next roadmap: alpha and capability growth
   - [ ] Emit structured logs, metrics, and load statistics for troubleshooting.
   - [ ] Leave scheduling, orchestration, lineage, auditing, and governance to
     dedicated external systems and destination metadata.
+
+- [ ] Release 0.2.0
 
 Documentation and typing update
 -------------------------------
