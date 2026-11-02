@@ -45,6 +45,19 @@ uv run python demo.py pipeline.yaml
 - Update the README when changing supported configuration, public APIs, or
   merge behavior.
 
+## Documentation style
+
+Use the [Microsoft Writing Style Guide](https://learn.microsoft.com/style-guide/welcome/)
+as the default when you write or update documentation. Adapt it when the
+project's audience, Markdown format, or established repository conventions
+provide a clearer approach.
+
+- Use sentence-style headings, active voice, and direct language.
+- Write task-oriented guidance that tells readers what to do and why.
+- Keep the README concise; put detailed field-by-field behavior in focused
+  reference pages.
+- Keep examples complete, accurate, and aligned with tested behavior.
+
 ## Security
 
 Do not disclose suspected vulnerabilities in a public issue. Contact the

@@ -2,33 +2,26 @@
 
 [![CI](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml)
 
-`arrow-ingest` is a small, Arrow-native ingestion library. Connectors produce
-`pyarrow.RecordBatchReader` streams, and targets consume those streams without
-introducing a pipeline runtime or hidden metadata columns.
+Use `arrow-ingest` to move data from a supported source to a supported target
+through an Arrow stream. It keeps ingestion configuration explicit without
+adding a pipeline runtime or hidden metadata columns.
 
-The project currently supports:
+You can:
 
-- REST JSON and local Parquet connectors;
-- local Parquet files and DuckDB tables as targets; and
-- replace, append, upsert, and SCD2 merge strategies.
+- Read REST JSON APIs and local Parquet files.
+- Write local Parquet files and DuckDB tables.
+- Replace, append, upsert, or retain SCD2 history.
 
-## Why this exists
+## Use one Arrow data boundary
 
-Ingestion libraries do not need a large abstraction surface or separate data
-paths for every kind of source and destination. A connector can read from an
-external system, produce an Arrow stream, and a target can load that stream
-with an explicit merge strategy.
+Connectors produce `pyarrow.RecordBatchReader` streams. Targets consume those
+streams and apply an explicit merge strategy. This is the only data contract
+between sources and targets.
 
-`arrow-ingest` keeps that boundary deliberately small: connectors emit
-`pyarrow.RecordBatchReader` streams and targets consume them. New integrations
-adapt to those same contracts instead of introducing a new pipeline runtime,
-intermediate data model, or special-case execution path.
-
-Arrow is especially suitable for this boundary. Its columnar format carries an
-explicit schema alongside batches of data, which makes type handling
-predictable while allowing records to be streamed without materializing an
-entire dataset. It is also widely supported across data tools, so connectors
-and targets can interoperate with fewer conversions and copies.
+New integrations use this boundary instead of creating a separate data path or
+intermediate data model. Arrow carries an explicit schema with the batches, so
+the library can validate types while streaming data without loading the entire
+source into memory.
 
 ## Architecture
 
@@ -42,177 +35,99 @@ flowchart LR
     Stream --> Target
 ```
 
-The Arrow stream is the only data contract between connectors and targets.
-
 ## Install
 
-The project requires Python 3.12 or later.
+Install Python 3.12 or later, then synchronize the development dependencies:
 
 ```console
 uv sync --dev
 ```
 
-## Run an ingestion
+## Run the sample pipeline
 
-Configure the connector, merge strategy, and target in YAML, then run the
-included command-line entry point:
+Run the included configuration:
 
 ```console
 uv run python demo.py pipeline.yaml
 ```
 
-The repository's [`pipeline.yaml`](./pipeline.yaml) is a runnable example
-that reads paginated product data and writes a Parquet file.
+[pipeline.yaml](./pipeline.yaml) reads a paginated product API and writes a
+Parquet file.
 
-## Configuration
+## Configure a pipeline
 
-### REST connector
+Each pipeline file has a source connector, a merge strategy, and a target:
 
 ```yaml
 connector:
   type: rest
   url: https://api.example.com/products
-  records_path: data.products
+  records_path: products
   schema:
     id: int64
     title: string
-    price: float64
-  schema_policy: strict
-  params:
-    locale: en
-  headers:
-    Accept: application/json
-  cursor:
-    type: high_watermark
-    field: id
-    request_param: after_id
-  pagination:
-    type: offset
-    offset_param: offset
-    limit_param: limit
-    page_size: 100
-    total_path: meta.total
-  request:
-    timeout_seconds: 30
-    retries: 3
-    backoff_seconds: 1
-```
-
-`records_path` and `total_path` support dot-separated paths into JSON objects.
-The strict schema policy requires every declared field in each record to have
-the configured primitive Arrow type. Extra fields are ignored. Supported
-schema values are `int64`, `float64`, `string`, and `bool`.
-
-REST requests can use bearer authentication without storing the secret in
-YAML:
-
-```yaml
-auth:
-  type: bearer
-  token_env: PRODUCTS_API_TOKEN
-```
-
-Set the named environment variable before running the command. When bearer
-authentication is configured, do not also configure an `Authorization` header.
-
-### Parquet connector
-
-```yaml
-connector:
-  type: parquet
-  path: ./input/products.parquet
-```
-
-Parquet connectors stream local files and do not support cursors.
-
-### Targets
-
-```yaml
+merge: replace
 target:
   type: parquet
   path: ./output/products.parquet
 ```
 
-```yaml
-target:
-  type: duckdb
-  path: ./output/warehouse.duckdb
-  table: products
-```
+For a complete runnable REST-to-Parquet example, see
+[pipeline.yaml](./pipeline.yaml).
 
-Both targets can derive a high-watermark from an existing integer destination
-field for incremental REST loads.
+Use the REST connector for JSON APIs and the Parquet connector for local
+Parquet files. Use the Parquet target for one output file or the DuckDB target
+for one table.
 
-### Merge strategies
+Choose a merge strategy that matches the load:
 
-Use `replace` to overwrite the destination or `append` to add incoming rows:
+- Use `replace` for a first or full refresh.
+- Use `append` to retain existing rows.
+- Use `upsert` to replace rows with matching keys.
+- Use `scd2` to retain a history of changes.
 
-```yaml
-merge: replace
-```
+You can add bearer authentication, offset pagination, request retries, and a
+destination-derived high-watermark cursor to a REST connector. See the
+[YAML configuration reference](./docs/configuration-reference.md) for all
+supported fields, defaults, validation rules, and complete examples.
 
-Use `upsert` to replace destination rows that share the configured key tuple.
-Incoming key values must be non-null and unique, and the input schema must
-match the existing destination schema.
+## Use the Python API
 
-```yaml
-merge:
-  strategy: upsert
-  keys: [id]
-```
+Use the Python API when YAML does not fit your integration. The public package
+provides `Connector` and `Target` protocols, `Cursor`, `MergeConfiguration`,
+and `SCD2Configuration` data classes, merge parsing helpers, and the built-in
+connector and target implementations. Connectors return Arrow stream readers.
+Targets consume readers and return the number of incoming rows written.
 
-Use SCD2 to preserve row history. A new version is created only when a tracked
-field changes, and every incoming version must be later than the current one
-for its key.
+## Develop and validate changes
 
-```yaml
-merge:
-  strategy: scd2
-  keys: [id]
-  tracked_fields: [title, price]
-  effective_at: version
-  valid_from: valid_from
-  valid_to: valid_to
-  is_current: is_current
-```
-
-## Library API
-
-The public package exports `Connector` and `Target` protocols, the
-`Cursor`, `MergeConfiguration`, and `SCD2Configuration` data classes, merge
-strategy parsing helpers, and the built-in connector and target
-implementations. Connectors return Arrow stream readers; targets accept them
-and return the number of incoming rows written.
-
-## Development
-
-Install [just](https://just.systems/) to run the local development commands:
+Install [just](https://just.systems/) to run local development commands:
 
 ```console
 just --list
 just check
 ```
 
-`just check` synchronizes locked dependencies, then runs tests, linting, and
-formatting checks. `just release-check` additionally builds the source
-distribution and wheel.
+Run `just check` before you open a pull request. It synchronizes locked
+dependencies, then runs tests, linting, and formatting checks. Run
+`just release-check` to also build the source distribution and wheel.
 
-Generate a branch-coverage report with missing lines:
+Generate a branch-coverage report:
 
 ```console
 just coverage
 ```
 
-The HTML report is written to `htmlcov/index.html` and the XML report to
-`coverage.xml`. CI uploads both as the `coverage-report` workflow artifact.
+The command writes an HTML report to `htmlcov/index.html` and an XML report to
+`coverage.xml`. CI uploads both files as the `coverage-report` artifact.
 
-## Releases
+## Review release information
 
-The project is currently in the `0.x` alpha series. See
-[CHANGELOG.md](./CHANGELOG.md) for release notes and
-[RELEASING.md](./RELEASING.md) for the versioning and release process.
+The project is in the `0.x` alpha series. Read [CHANGELOG.md](./CHANGELOG.md)
+for release notes and [RELEASING.md](./RELEASING.md) for the versioning and
+release process.
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow, required
-checks, and design guidelines.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow,
+required checks, design guidelines, and documentation standards.
