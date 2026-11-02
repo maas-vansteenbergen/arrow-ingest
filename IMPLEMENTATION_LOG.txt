@@ -91,53 +91,109 @@ Important constraints and deferred behavior
   deletion/tombstone semantics, schema evolution, source-order repair, or
   opaque cursors.
 
-Next roadmap: alpha and capability growth
------------------------------------------
+Completed release milestone
+--------------------------
 
-- [ ] Establish semantic versioning and release discipline
-  - [ ] Publish the prepared `v0.1.0-alpha.1` release from `main`.
+- Release discipline
+  - [x] Publish the prepared `v0.1.0-alpha.1` release from `main`.
   - [x] Document the compatibility promise for `0.x` versions.
   - [x] Define the versioning, changelog, tag, and release-note workflow before
     expanding the public API.
 
-- [ ] Add Arrow-preserving declarative transformations
-  - [ ] Implement selection, renaming, casting, derivation, and filtering as
-    stream-to-stream operations.
-  - [ ] Use Polars as the internal transformation engine without exposing it as
-    the public data contract.
+Current roadmap: configuration contract and user experience
+-----------------------------------------------------------
 
-- [ ] Evolve cursor correctness and incremental loading
-  - [ ] Support timestamp-like and tuple destination-derived watermarks,
-    including explicit tie-breaker and lookback policies.
-  - [ ] Add opaque source cursors only when a source cannot be resumed from
-    destination data, and advance them only after a successful load.
+- YAML behavior contract
+  - [ ] Inventory every supported YAML field, default, and accepted value.
+  - [ ] Add configuration-behavior tests for existing REST and Parquet
+    connector YAML.
+  - [ ] Add configuration-behavior tests for existing DuckDB and Parquet
+    target YAML.
+  - [ ] Add configuration-behavior tests for existing merge and cursor YAML.
+  - [ ] Document YAML behavior only after its corresponding tests establish
+    the supported contract.
 
-- [ ] Complete the planned source connector foundation
-  - [ ] Add local CSV and JSON Lines connectors using the existing Arrow stream
-    contract.
-  - [ ] Add ADBC connectors for supported databases without creating a separate
-    data path or framework runtime.
+- YAML configuration reference
+  - [ ] Document existing connector YAML fields, defaults, accepted values, and
+    validation rules.
+  - [ ] Document target, merge, and cursor YAML fields, defaults, accepted
+    values, and validation rules.
 
-- [ ] Deepen reusable HTTP connector capabilities
-  - [ ] Add cursor and next-link pagination plus explicit rate-limit behavior.
-  - [ ] Add broadly reusable authentication patterns, starting with API keys and
-    Basic authentication; defer OAuth, mTLS, signing, and SDK-specific
-    patterns until a concrete reusable requirement exists.
+- Task-oriented guides
+  - [ ] Add a configuration example for a first successful Parquet load.
+  - [ ] Add configuration examples for append, upsert, and SCD2 merges.
 
-- [ ] Expand destination support deliberately
-  - [ ] Add ADBC targets where their loading semantics support the selected merge
-    strategy correctly.
-  - [ ] Evaluate Iceberg and Delta targets only with a strong Arrow ingestion
-    story and explicit merge, publication, and schema policies.
-  - [ ] Add Parquet dataset-directory mode only after defining schema,
-    concurrency, publication, and compaction behavior.
+- Actionable user experience
+  - [ ] Document common YAML validation failures, their causes, and their
+    resolutions.
+  - [ ] Document how YAML configuration maps to the equivalent Python API.
+  - [ ] Add a concise onboarding path that links a first successful load to
+    reference and troubleshooting material.
 
-- [ ] Improve operational visibility without becoming an orchestrator
-  - [ ] Emit structured logs, metrics, and load statistics for troubleshooting.
-  - [ ] Leave scheduling, orchestration, lineage, auditing, and governance to
-    dedicated external systems and destination metadata.
+- Behavior-first configuration workflow
+  - [ ] Document in `CONTRIBUTING.md` that supported YAML behavior requires
+    configuration-behavior tests before user-facing documentation is updated.
+  - [ ] Document the same configuration-contract workflow in the README and
+    configuration-reference authoring guidance.
+  - [ ] Add a CI check that validates published YAML examples against the
+    supported configuration contract.
 
-- [ ] Release 0.2.0
+- [ ] Release 0.2.0 with the existing configuration contract and user
+  documentation.
+
+Next roadmap: production-pilot capabilities and validation
+-----------------------------------------------------------
+
+- Typed CSV ingestion
+  - [ ] Define YAML configuration for a local CSV connector with an explicit
+    declared Arrow schema.
+  - [ ] Implement CSV ingestion using the declared Arrow schema.
+  - [ ] Add behavior tests for typed CSV parsing, null handling, and invalid
+    values.
+  - [ ] Document typed CSV ingestion, declared schemas, and parsing failures.
+  - [ ] Add a configuration example for a typed CSV load.
+
+- OAuth 2.0 client-credentials authentication
+  - [ ] Define YAML configuration for OAuth 2.0 client-credentials
+    authentication using environment-backed secrets.
+  - [ ] Implement client-credentials token acquisition and reuse for REST
+    requests.
+  - [ ] Add failure-path tests for OAuth 2.0 client-credentials authentication.
+  - [ ] Document OAuth 2.0 client-credentials configuration and safe secret
+    handling.
+  - [ ] Add a configuration example for a REST load with OAuth 2.0
+    client-credentials authentication.
+
+- Operational visibility without orchestration
+  - [ ] Emit structured logs for troubleshooting.
+  - [ ] Emit metrics for load monitoring.
+  - [ ] Emit load statistics for troubleshooting.
+  - [ ] Document observability output and integration patterns for logs,
+    metrics, and load statistics.
+  - Scheduling, orchestration, lineage, auditing, and governance remain the
+    responsibility of dedicated external systems and destination metadata.
+
+- Production-pilot validation
+  - [ ] Define production-pilot acceptance and data-reconciliation criteria.
+  - [ ] Run a controlled production pilot against representative workloads.
+  - [ ] Incorporate production-pilot findings into the release criteria.
+
+- [ ] Release 0.3.0 after successful production-pilot validation.
+
+Post-pilot capability backlog
+-----------------------------
+
+- Arrow-preserving declarative transformations: selection, renaming, casting,
+  derivation, filtering, and Polars-backed implementation.
+- Advanced cursor correctness: timestamp and tuple watermarks, tie-breakers,
+  lookback policies, and opaque source cursors.
+- Additional source connectors: JSON Lines and ADBC.
+- Additional HTTP capabilities: cursor and next-link pagination, rate limits,
+  API-key authentication, and Basic authentication.
+- Destination support: ADBC targets, Iceberg and Delta evaluation, and Parquet
+  dataset-directory mode.
+- Document, test, and publish task-oriented guides for each capability before
+  treating it as supported.
 
 Documentation and typing update
 -------------------------------
