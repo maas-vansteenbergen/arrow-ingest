@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from arrow_ingest.connectors import ParquetConnector, RestConnector
+from arrow_ingest.core import MergeStrategy
+from arrow_ingest.targets import DuckDBTarget, ParquetTarget
 from demo import _connector_from_config, _cursor_from_destination, _target_from_config
-from ingester.connectors import ParquetConnector, RestConnector
-from ingester.core import MergeStrategy
-from ingester.targets import DuckDBTarget, ParquetTarget
 
 
 @pytest.mark.parametrize(

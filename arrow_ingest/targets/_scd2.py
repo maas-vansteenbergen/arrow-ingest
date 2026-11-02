@@ -21,30 +21,30 @@ def apply_scd2(
     configuration: SCD2Configuration,
 ) -> int:
     _validate_source_schema(schema, keys, configuration)
-    connection.execute("CREATE TEMP TABLE ingester_input AS SELECT * FROM ingester_stream")
-    validate_incoming_keys(connection, "ingester_input", keys)
-    row_count = duckdb_row_count(connection, "ingester_input")
+    connection.execute("CREATE TEMP TABLE arrow_ingest_input AS SELECT * FROM arrow_ingest_stream")
+    validate_incoming_keys(connection, "arrow_ingest_input", keys)
+    row_count = duckdb_row_count(connection, "arrow_ingest_input")
 
     if not table_exists(connection, destination):
         connection.execute(
             f"CREATE TABLE {quoted_identifier(destination)} AS "
-            f"{_new_version_rows('ingester_input', configuration)}"
+            f"{_new_version_rows('arrow_ingest_input', configuration)}"
         )
         return row_count
 
     connection.execute(
-        f"CREATE TEMP TABLE ingester_scd2_shape AS "
-        f"{_new_version_rows('ingester_input', configuration)} LIMIT 0"
+        f"CREATE TEMP TABLE arrow_ingest_scd2_shape AS "
+        f"{_new_version_rows('arrow_ingest_input', configuration)} LIMIT 0"
     )
-    if table_schema(connection, destination) != table_schema(connection, "ingester_scd2_shape"):
+    if table_schema(connection, destination) != table_schema(connection, "arrow_ingest_scd2_shape"):
         raise ValueError("Cannot apply SCD2 with a different source schema or metadata columns.")
 
     current = _current_rows(destination, configuration)
     _validate_current_rows(connection, current, keys, configuration)
     _validate_effective_order(connection, current, keys, configuration)
     connection.execute(
-        "CREATE TEMP TABLE ingester_scd2_changes AS "
-        f"{_changed_rows('ingester_input', current, keys, configuration)}"
+        "CREATE TEMP TABLE arrow_ingest_scd2_changes AS "
+        f"{_changed_rows('arrow_ingest_input', current, keys, configuration)}"
     )
 
     connection.execute("BEGIN TRANSACTION")
@@ -54,13 +54,13 @@ def apply_scd2(
             f"SET {quoted_identifier(configuration.valid_to)} = changes."
             f"{quoted_identifier(configuration.effective_at)}, "
             f"{quoted_identifier(configuration.is_current)} = FALSE "
-            "FROM ingester_scd2_changes AS changes "
+            "FROM arrow_ingest_scd2_changes AS changes "
             f"WHERE existing.{quoted_identifier(configuration.is_current)} "
             f"AND {key_match_condition('existing', 'changes', keys)}"
         )
         connection.execute(
             f"INSERT INTO {quoted_identifier(destination)} "
-            f"{_new_version_rows('ingester_scd2_changes', configuration)}"
+            f"{_new_version_rows('arrow_ingest_scd2_changes', configuration)}"
         )
     except duckdb.Error:
         connection.execute("ROLLBACK")
@@ -130,7 +130,7 @@ def _validate_effective_order(
     configuration: SCD2Configuration,
 ) -> None:
     if connection.execute(
-        f"SELECT 1 FROM ingester_input AS incoming "
+        f"SELECT 1 FROM arrow_ingest_input AS incoming "
         f"JOIN {current} AS existing "
         f"ON {key_match_condition('incoming', 'existing', keys)} "
         f"WHERE incoming.{quoted_identifier(configuration.effective_at)} <= "

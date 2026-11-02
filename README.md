@@ -1,8 +1,8 @@
-# ingester
+# arrow-ingest
 
-[![CI](https://github.com/mvansteenbergen-wrij/ingester-tryout/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mvansteenbergen-wrij/ingester-tryout/actions/workflows/ci.yml)
+[![CI](https://github.com/mvansteenbergen-wrij/arrow-ingest-tryout/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mvansteenbergen-wrij/arrow-ingest-tryout/actions/workflows/ci.yml)
 
-`ingester` is a small, Arrow-native ingestion library. Connectors produce
+`arrow-ingest` is a small, Arrow-native ingestion library. Connectors produce
 `pyarrow.RecordBatchReader` streams, and targets consume those streams without
 introducing a pipeline runtime or hidden metadata columns.
 
@@ -19,7 +19,7 @@ paths for every kind of source and destination. A connector can read from an
 external system, produce an Arrow stream, and a target can load that stream
 with an explicit merge strategy.
 
-`ingester` keeps that boundary deliberately small: connectors emit
+`arrow-ingest` keeps that boundary deliberately small: connectors emit
 `pyarrow.RecordBatchReader` streams and targets consume them. New integrations
 adapt to those same contracts instead of introducing a new pipeline runtime,
 intermediate data model, or special-case execution path.
@@ -201,3 +201,8 @@ uv run pytest --cov --cov-report=term-missing --cov-report=html --cov-report=xml
 
 The HTML report is written to `htmlcov/index.html` and the XML report to
 `coverage.xml`. CI uploads both as the `coverage-report` workflow artifact.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow, required
+checks, and design guidelines.

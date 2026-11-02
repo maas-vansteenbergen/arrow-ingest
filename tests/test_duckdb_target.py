@@ -4,8 +4,8 @@ import duckdb
 import pyarrow as pa
 import pytest
 
-from ingester.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
-from ingester.targets import DuckDBTarget
+from arrow_ingest.core import Cursor, MergeConfiguration, MergeStrategy, SCD2Configuration
+from arrow_ingest.targets import DuckDBTarget
 
 
 def test_persists_multiple_arrow_batches(tmp_path) -> None:

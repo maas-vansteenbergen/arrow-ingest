@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ingester.core import (
+from arrow_ingest.core import (
     MergeConfiguration,
     MergeStrategy,
     SCD2Configuration,
