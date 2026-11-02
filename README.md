@@ -1,6 +1,6 @@
 # arrow-ingest
 
-[![CI](https://github.com/mvansteenbergen-wrij/arrow-ingest-tryout/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mvansteenbergen-wrij/arrow-ingest-tryout/actions/workflows/ci.yml)
+[![CI](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml)
 
 `arrow-ingest` is a small, Arrow-native ingestion library. Connectors produce
 `pyarrow.RecordBatchReader` streams, and targets consume those streams without
