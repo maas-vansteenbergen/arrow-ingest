@@ -119,6 +119,14 @@ Current roadmap: configuration contract and user experience
   - [ ] Document target, merge, and cursor YAML fields, defaults, accepted
     values, and validation rules.
 
+- First project experience
+  - [ ] Define and document a recommended project structure.
+  - [ ] Document how multiple pipeline configurations should be organized.
+  - [ ] Add a complete example project containing source, target, merge, and
+        cursor configuration.
+  - [ ] Add a guide: "Create your first project".
+  - [ ] Add a guide: "Growing from one pipeline to multiple pipelines".
+
 - Task-oriented guides
   - [ ] Add a configuration example for a first successful Parquet load.
   - [ ] Add configuration examples for append, upsert, and SCD2 merges.
