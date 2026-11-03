@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml)
 
-`arrow-ingest` is a small, Arrow-native ingestion library. It moves data from
-a supported source to a supported target through an Arrow stream, while keeping
-configuration explicit and avoiding a pipeline runtime or hidden metadata
-columns.
+`arrow-ingest` is a small declarative ingestion library for moving data between systems.
+
+Pipelines define what to load and where to write it. Connectors produce Apache Arrow
+streams, targets consume them, and merge strategies control how data is applied.
 
 It currently supports:
 
@@ -15,18 +15,20 @@ It currently supports:
 
 ## Why this exists
 
-Ingestion libraries can easily acquire separate data paths, intermediate data
-models, and orchestration concepts for every source and destination. Those
-abstractions are often unnecessary when a connector can read a source, produce
-an Arrow stream, and let a target apply an explicit merge strategy.
+Ingesting data from a source to a destination is often a much smaller
+problem than the tooling around it.
 
-`arrow-ingest` deliberately keeps that boundary small. Connectors produce
-`pyarrow.RecordBatchReader` streams, and targets consume them. New integrations
-adapt to the same contract instead of creating a separate data path.
+Many ingestion frameworks introduce their own runtime, state management,
+metadata storage, scheduling, or internal data model. These abstractions can be
+useful, but they also add complexity to simple ingestion workloads.
 
-Arrow carries an explicit schema with each batch. This makes type handling
-predictable while allowing data to stream without materializing the entire
-source in memory.
+`arrow-ingest` takes a different approach. Connectors produce
+`pyarrow.RecordBatchReader` streams, merge strategies define how data is
+applied, and targets consume the stream.
+
+Arrow is the only data contract within the library. This keeps data
+movement explicit, avoids multiple internal representations, and allows
+large datasets to stream without loading everything into memory.
 
 ## Architecture
 
