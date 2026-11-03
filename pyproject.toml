@@ -18,6 +18,9 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
+[project.scripts]
+arrow-ingest = "arrow_ingest.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
@@ -30,7 +33,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["demo", "arrow_ingest"]
+source = ["arrow_ingest"]
 
 [tool.coverage.report]
 show_missing = true

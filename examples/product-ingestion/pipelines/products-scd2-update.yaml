@@ -1,0 +1,16 @@
+connector:
+  type: parquet
+  path: ../data/products-v2.parquet
+
+merge:
+  strategy: scd2
+  keys: [id]
+  tracked_fields: [title, price]
+  effective_at: effective_at
+  valid_from: valid_from
+  valid_to: valid_to
+  is_current: is_current
+
+target:
+  type: parquet
+  path: ../output/products-history.parquet

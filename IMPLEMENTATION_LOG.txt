@@ -9,10 +9,11 @@ Current architecture
 - Public runtime concepts are Connector, Cursor, Arrow stream, Target, and
   MergeConfiguration. There is no pipeline, source, resource, registry, or
   state-manager abstraction.
-- `demo.py` is a thin YAML/configuration adapter. `pipeline.yaml` is the
-  runnable sample pipeline configuration. Concrete implementations live in
-  `arrow_ingest.connectors` and `arrow_ingest.targets`; package facades preserve
-  their public imports.
+- `arrow-ingest run` is the YAML/configuration command-line adapter.
+  `run_pipeline` provides the equivalent Python integration point.
+  `pipeline.yaml` is the runnable sample pipeline configuration. Concrete
+  implementations live in `arrow_ingest.connectors` and
+  `arrow_ingest.targets`; package facades preserve their public imports.
 - The project requires Python 3.12+ and CI tests Python 3.12 and 3.15.
 - Dependencies are uv-managed. CI runs locked synchronization, Ruff lint and
   format checks, and pytest. A separate Python 3.12 coverage job publishes
@@ -120,8 +121,8 @@ Current roadmap: configuration contract and user experience
     values, and validation rules.
 
 - First project experience
-  - [ ] Define and document a recommended project structure.
-  - [ ] Document how multiple pipeline configurations should be organized.
+  - [x] Define and document a recommended project structure.
+  - [x] Document how multiple pipeline configurations should be organized.
   - [ ] Add a complete example project containing source, target, merge, and
         cursor configuration.
   - [ ] Add a guide: "Create your first project".
@@ -129,7 +130,9 @@ Current roadmap: configuration contract and user experience
 
 - Task-oriented guides
   - [ ] Add a configuration example for a first successful Parquet load.
-  - [ ] Add configuration examples for append, upsert, and SCD2 merges.
+  - [ ] Add an append merge configuration example.
+  - [ ] Add an upsert merge configuration example.
+  - [x] Add an SCD2 merge configuration example with static Parquet snapshots.
 
 - Actionable user experience
   - [ ] Document common YAML validation failures, their causes, and their

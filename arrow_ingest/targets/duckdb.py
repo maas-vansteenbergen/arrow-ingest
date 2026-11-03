@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -47,7 +48,7 @@ class DuckDBTarget:
             ValueError: If the field is invalid or does not contain integers.
         """
         _column_name(field)
-        connection = duckdb.connect(self._database)
+        connection = _connect(self._database)
         try:
             if not table_exists(connection, self._table):
                 return None
@@ -77,7 +78,7 @@ class DuckDBTarget:
             ValueError: If the merge strategy, input keys, or schemas are
                 incompatible with the destination.
         """
-        connection = duckdb.connect(self._database)
+        connection = _connect(self._database)
         try:
             connection.register("arrow_ingest_stream", stream)
             if merge.strategy is MergeStrategy.REPLACE:
@@ -174,6 +175,12 @@ def _required_string(target: Mapping[str, Any], name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"target.{name} must be a non-empty string.")
     return value
+
+
+def _connect(database: str) -> duckdb.DuckDBPyConnection:
+    if database != ":memory:":
+        Path(database).parent.mkdir(parents=True, exist_ok=True)
+    return duckdb.connect(database)
 
 
 def _table_name(target: Mapping[str, Any]) -> str:

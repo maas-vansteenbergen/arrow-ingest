@@ -53,7 +53,7 @@ uv sync --dev
 Run the included configuration:
 
 ```console
-uv run python demo.py pipeline.yaml
+uv run arrow-ingest run pipeline.yaml
 ```
 
 [pipeline.yaml](./pipeline.yaml) reads a paginated product API and writes a
@@ -96,43 +96,45 @@ destination-derived high-watermark cursor to a REST connector. See the
 [YAML configuration reference](./docs/configuration-reference.md) for all
 supported fields, defaults, validation rules, and complete examples.
 
-## Use the Python API
+Run a pipeline from Python when you integrate it into an orchestration task:
 
-Use the Python API when YAML does not fit your integration. The public package
-provides `Connector` and `Target` protocols, `Cursor`, `MergeConfiguration`,
-and `SCD2Configuration` data classes, merge parsing helpers, and the built-in
-connector and target implementations. Connectors return Arrow stream readers.
-Targets consume readers and return the number of incoming rows written.
+```python
+from arrow_ingest import run_pipeline
 
-## Develop and validate changes
-
-Install [just](https://just.systems/) to run local development commands:
-
-```console
-just --list
-just check
+result = run_pipeline("pipelines/products.yaml")
+print(result.rows_written)
 ```
 
-Run `just check` before you open a pull request. It synchronizes locked
-dependencies, then runs tests, linting, and formatting checks. Run
-`just release-check` to also build the source distribution and wheel.
+The function returns a `LoadResult` with the number of written rows, the
+incoming column count, and the resolved destination path.
 
-Generate a branch-coverage report:
+## Organize a project
 
-```console
-just coverage
-```
+Keep pipeline YAML files, local input data, and generated output in separate
+directories. See [Organize an ingestion project](./docs/project-structure.md)
+for the recommended layout and
+[product ingestion example](./examples/product-ingestion/) for a small
+starting point.
 
-The command writes an HTML report to `htmlcov/index.html` and an XML report to
-`coverage.xml`. CI uploads both files as the `coverage-report` artifact.
+The same [product ingestion example](./examples/product-ingestion/) also
+includes static Parquet snapshots and SCD2 history loading.
 
-## Review release information
+## Use the lower-level Python API
+
+Use connectors and targets directly when a YAML configuration does not fit your
+integration. The public package provides `Connector` and `Target` protocols,
+`Cursor`, `MergeConfiguration`, and `SCD2Configuration` data classes, merge
+parsing helpers, and the built-in connector and target implementations.
+Connectors return Arrow stream readers. Targets consume readers and return the
+number of incoming rows written.
+
+## Project status
 
 The project is in the `0.x` alpha series. Read [CHANGELOG.md](./CHANGELOG.md)
-for release notes and [RELEASING.md](./RELEASING.md) for the versioning and
-release process.
+for release notes and known limitations.
 
 ## Contributing
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow,
-required checks, design guidelines, and documentation standards.
+required checks, design guidelines, documentation standards, and release
+process.

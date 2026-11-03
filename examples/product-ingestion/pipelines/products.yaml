@@ -1,0 +1,18 @@
+connector:
+  type: rest
+  url: https://dummyjson.com/products
+  records_path: products
+  schema:
+    id: int64
+    title: string
+    price: float64
+    category: string
+    stock: int64
+  schema_policy: strict
+
+merge: replace
+
+target:
+  type: duckdb
+  path: ../output/products.duckdb
+  table: products

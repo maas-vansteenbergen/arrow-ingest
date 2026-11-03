@@ -88,7 +88,7 @@ Transformations
 Abstraction boundaries
 ----------------------
 
-The only runtime concepts are:
+The data-flow runtime concepts are:
 
 - Connector
 - Cursor
@@ -99,7 +99,9 @@ The only runtime concepts are:
 The framework does not expose Pipeline, Flow, Stage, Source, Resource, Asset,
 Dataset, Block, Node, or registry abstractions. Configuration may describe an
 ingestion workflow, but the framework does not model that workflow as an
-independent runtime object.
+independent runtime object. Stateless integration entry points may execute a
+configuration and return operational load results without introducing a
+workflow runtime model.
 
 Operational boundaries
 ----------------------
