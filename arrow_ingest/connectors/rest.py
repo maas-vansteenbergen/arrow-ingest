@@ -363,7 +363,7 @@ def _offset_pagination(pagination: Any) -> tuple[str, str, int, str]:
 
 
 def _request_headers(configured_headers: Any, auth: Any) -> dict[str, str]:
-    headers = {"User-Agent": "arrow-ingest-demo/0.1"}
+    headers = {"User-Agent": "arrow-ingest/0.1"}
     if configured_headers is not None:
         if not isinstance(configured_headers, Mapping):
             raise ValueError("connector.headers must be a mapping.")

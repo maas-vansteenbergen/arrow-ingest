@@ -56,6 +56,22 @@ def test_persists_multiple_arrow_batches(tmp_path) -> None:
     assert rows == [(1,), (2,), (3,)]
 
 
+def test_creates_missing_database_parent_directory(tmp_path) -> None:
+    schema = pa.schema([pa.field("id", pa.int64())])
+    reader = pa.RecordBatchReader.from_batches(
+        schema,
+        [pa.RecordBatch.from_pydict({"id": [1]}, schema=schema)],
+    )
+    database = tmp_path / "output" / "warehouse.duckdb"
+
+    DuckDBTarget({"path": str(database), "table": "products"}).load(
+        reader,
+        MergeConfiguration(MergeStrategy.REPLACE),
+    )
+
+    assert database.is_file()
+
+
 def test_appends_arrow_batches_to_existing_table(tmp_path) -> None:
     schema = pa.schema([pa.field("id", pa.int64())])
     database = tmp_path / "warehouse.duckdb"

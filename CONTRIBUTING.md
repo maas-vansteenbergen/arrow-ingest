@@ -14,23 +14,27 @@ uv sync --dev
 Run the sample ingestion pipeline with:
 
 ```console
-uv run python demo.py pipeline.yaml
+uv run arrow-ingest run pipeline.yaml
 ```
 
 ## Development workflow
 
 1. Create a focused branch from `main`.
 2. Keep changes small and include tests for changed behavior.
-3. Run the required checks before opening a pull request:
+3. Install [just](https://just.systems/) and run the required checks before
+   opening a pull request:
 
    ```console
-   uv run pytest
-   uv run ruff check .
-   uv run ruff format --check .
+   just check
    ```
 
 4. Describe the behavior change, tests run, and any documentation updates in
    the pull request.
+
+Run `just coverage` to generate branch coverage reports. Run
+`just release-check` to run the required checks and build the source
+distribution and wheel. Read [RELEASING.md](./RELEASING.md) for the release
+process.
 
 ## Design guidelines
 
