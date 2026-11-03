@@ -119,15 +119,6 @@ starting point.
 The same [product ingestion example](./examples/product-ingestion/) also
 includes static Parquet snapshots and SCD2 history loading.
 
-## Use the lower-level Python API
-
-Use connectors and targets directly when a YAML configuration does not fit your
-integration. The public package provides `Connector` and `Target` protocols,
-`Cursor`, `MergeConfiguration`, and `SCD2Configuration` data classes, merge
-parsing helpers, and the built-in connector and target implementations.
-Connectors return Arrow stream readers. Targets consume readers and return the
-number of incoming rows written.
-
 ## Project status
 
 The project is in the `0.x` alpha series. Read [CHANGELOG.md](./CHANGELOG.md)
