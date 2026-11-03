@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maas-vansteenbergen/arrow-ingest/actions/workflows/ci.yml)
 
-`arrow-ingest` is a small, Arrow-native ingestion library. It moves data from
-a supported source to a supported target through an Arrow stream, while keeping
-configuration explicit and avoiding a pipeline runtime or hidden metadata
-columns.
+arrow-ingest is a small declarative ingestion library for moving data between systems.
+
+Pipelines define what to load and where to write it. Connectors produce Apache Arrow
+streams, targets consume them, and merge strategies control how data is applied.
 
 It currently supports:
 
