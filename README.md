@@ -15,11 +15,11 @@ It currently supports:
 
 ## Why this exists
 
-Ingesting data from a source to a database is often a much smaller
+Ingesting data from a source to a destination is often a much smaller
 problem than the tooling around it.
 
 Many ingestion frameworks introduce their own runtime, state management,
-metadata storage, or internal data model. These abstractions can be
+metadata storage, scheduling, or internal data model. These abstractions can be
 useful, but they also add complexity to simple ingestion workloads.
 
 `arrow-ingest` takes a different approach. Connectors produce
