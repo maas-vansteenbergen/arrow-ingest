@@ -33,13 +33,13 @@ project evolves.
   - [x] Document how multiple pipeline configurations should be organized.
   - [x] Add a complete example project containing source, target, merge, and
         cursor configuration.
-  - [ ] Add a guide: "Create your first project".
-  - [ ] Add a guide: "Growing from one pipeline to multiple pipelines".
+  - [x] Document how to create and run a first project.
+  - [x] Document how to add and run multiple configurations.
 
 - Task-oriented guides
-  - [ ] Add a configuration example for a first successful Parquet load.
+  - [x] Add a configuration example for a first successful Parquet load.
   - [ ] Add an append merge configuration example.
-  - [ ] Add an upsert merge configuration example.
+  - [x] Add an upsert merge configuration example.
   - [x] Add an SCD2 merge configuration example with static Parquet snapshots.
 
 - Actionable user experience
