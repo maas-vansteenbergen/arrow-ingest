@@ -124,7 +124,8 @@ includes static Parquet snapshots and SCD2 history loading.
 ## Project status
 
 The project is in the `0.x` alpha series. Read [CHANGELOG.md](./CHANGELOG.md)
-for release notes and known limitations.
+for release notes and known limitations, and [ROADMAP.md](./ROADMAP.md) for
+planned work and open decisions.
 
 ## Contributing
 
