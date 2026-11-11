@@ -26,9 +26,7 @@ useful, but they also add complexity to simple ingestion workloads.
 `pyarrow.RecordBatchReader` streams, merge strategies define how data is
 applied, and targets consume the stream.
 
-Arrow is the only data contract within the library. This keeps data
-movement explicit, avoids multiple internal representations, and allows
-large datasets to stream without loading everything into memory.
+Arrow provides a common streaming interface between connectors and targets, allowing data to be processed in batches rather than always loading the entire dataset into memory. Some connectors and merge strategies still buffer or stage data.
 
 ## Architecture
 
@@ -124,7 +122,8 @@ includes static Parquet snapshots and SCD2 history loading.
 ## Project status
 
 The project is in the `0.x` alpha series. Read [CHANGELOG.md](./CHANGELOG.md)
-for release notes and known limitations.
+for release notes and known limitations, and [ROADMAP.md](./ROADMAP.md) for
+planned work and open decisions.
 
 ## Contributing
 

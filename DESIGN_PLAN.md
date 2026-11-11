@@ -1,8 +1,7 @@
-Design Plan
-===========
+# Design plan
 
-Vision
-------
+## Vision
+
 Describe ingestion, do not require users to implement plumbing.
 
 The project provides a small, Arrow-native boundary between external systems
@@ -10,11 +9,10 @@ and destinations. It favors explicit configuration, predictable behavior, and
 a deliberately constrained abstraction surface over a general-purpose data
 platform.
 
-Core contracts
---------------
+## Core contracts
 
 1. Arrow is the data contract
-   - Connectors emit pyarrow.RecordBatchReader streams.
+   - Connectors emit `pyarrow.RecordBatchReader` streams.
    - Targets consume those streams.
    - Framework-specific data structures must not cross the connector-target
      boundary.
@@ -37,12 +35,11 @@ Core contracts
    - Every load declares a merge strategy.
    - The strategy set is append, replace, upsert, and SCD2.
    - Each target must reject strategies it cannot implement correctly.
-   - State is retained only when required by the selected strategy.
+   - Merge state is retained only when required by the selected strategy.
    - Merge behavior is explicit, validated, and does not add hidden metadata
      columns.
 
-Declarative configuration
--------------------------
+## Declarative configuration
 
 Configuration describes how data moves from a connector, through optional
 Arrow-preserving transformations, into a target. Configuration is not a
@@ -53,8 +50,7 @@ Pipeline runtime abstraction.
 - Common protocol behavior belongs in reusable connector configuration.
 - A common use case should not require custom Python to express it.
 
-Supported scope
----------------
+## Supported scope
 
 - Connectors cover local files, HTTP APIs, and databases with ADBC support.
 - Targets must provide a strong Arrow ingestion story. Parquet, DuckDB,
@@ -63,21 +59,25 @@ Supported scope
 - Message queues, CDC, spreadsheets, and SDK-only integrations are outside
   the initial scope.
 
-State and cursors
------------------
+## State and cursors
 
-- Derive state from destination data whenever possible.
-- Connectors own cursor semantics; targets expose only the destination queries
-  needed to resolve cursor positions.
+- Incremental loading is opt-in. Cursor behavior must be explicitly configured
+  or use documented defaults, not inferred.
+- Derive cursor state from retained destination data whenever possible.
+- Connectors own cursor semantics; targets expose only the destination
+  operations needed to resolve cursor positions and manage explicitly
+  configured checkpoints.
 - Resolve cursor positions before reading and advance them only after a
   successful load.
-- Persist opaque source state only when it cannot be derived from the
-  destination.
+- When opaque source state cannot be derived from destination data, the
+  framework may persist it in a user-provisioned, explicitly configured
+  destination location. Such state must be visible to the user.
+- Define failure and retry behavior for checkpoint updates so a checkpoint
+  cannot advance past data that hasn't been successfully loaded.
 - Cursor support must not introduce a state-management runtime abstraction or
   hidden metadata columns.
 
-Transformations
----------------
+## Transformations
 
 - Transformations consume Arrow streams and emit Arrow streams.
 - Polars is the internal transformation engine; Arrow remains the public data
@@ -85,8 +85,7 @@ Transformations
 - Complex business logic, analytical modeling, aggregation, and cross-dataset
   joins are outside the ingestion framework.
 
-Abstraction boundaries
-----------------------
+## Abstraction boundaries
 
 The data-flow runtime concepts are:
 
@@ -103,8 +102,7 @@ independent runtime object. Stateless integration entry points may execute a
 configuration and return operational load results without introducing a
 workflow runtime model.
 
-Operational boundaries
-----------------------
+## Operational boundaries
 
 - Orchestration belongs to systems such as Prefect, Dagster, Airflow, and
   Temporal, not to this framework.
