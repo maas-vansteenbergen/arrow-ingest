@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gzip
 import json
+import zlib
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
@@ -266,6 +268,10 @@ def test_accepts_supported_declared_schema_types(
             {"request": {"backoff_seconds": -1}},
             "connector.request.backoff_seconds must be a non-negative number.",
         ),
+        (
+            {"request": {"response_backoff_field": ""}},
+            "connector.request.response_backoff_field must be a non-empty string.",
+        ),
     ],
 )
 def test_rejects_invalid_rest_configuration_values(
@@ -424,6 +430,165 @@ def test_retries_retryable_http_failures_with_exponential_backoff(
     assert [batch.column("id").to_pylist() for batch in reader] == [[1]]
     assert timeouts == [2.5, 2.5, 2.5]
     assert delays == [1, 2]
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "gzip-without-header"])
+def test_decodes_compressed_json_responses(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+    encoding: str,
+) -> None:
+    raw = json.dumps({"items": [{"id": 1}]}).encode()
+    body = zlib.compress(raw) if encoding == "deflate" else gzip.compress(raw)
+
+    class Response(BytesIO):
+        headers = {} if encoding == "gzip-without-header" else {"Content-Encoding": encoding}
+
+    monkeypatch.setattr(rest, "urlopen", lambda request: Response(body))
+    result = RestConnector(rest_config(schema={"id": "int64"})).read().read_all()
+
+    assert result.to_pylist() == [{"id": 1}]
+
+
+def test_rejects_unsupported_response_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    class Response(BytesIO):
+        headers = {"Content-Encoding": "br"}
+
+    monkeypatch.setattr(rest, "urlopen", lambda request: Response(b"not-json"))
+    with pytest.raises(ValueError, match="Unsupported HTTP Content-Encoding: 'br'"):
+        RestConnector(rest_config()).read()
+
+
+def test_waits_for_configured_response_backoff_before_next_request(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    events: list[tuple[str, float | int]] = []
+
+    def urlopen(request: Any) -> BytesIO:
+        offset = int(parse_qs(urlsplit(request.full_url).query)["offset"][0])
+        events.append(("request", offset))
+        return _json_response({"items": [{"id": offset}], "total": 2, "delay": 2.5})
+
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "sleep", lambda delay: events.append(("sleep", delay)))
+    result = (
+        RestConnector(
+            rest_config(
+                schema={"id": "int64"},
+                request={"response_backoff_field": "delay"},
+                pagination={
+                    "type": "offset",
+                    "offset_param": "offset",
+                    "limit_param": "limit",
+                    "page_size": 1,
+                    "total_path": "total",
+                },
+            )
+        )
+        .read()
+        .read_all()
+    )
+
+    assert result.to_pylist() == [{"id": 0}, {"id": 1}]
+    assert events == [("request", 0), ("sleep", 2.5), ("request", 1), ("sleep", 2.5)]
+
+
+def test_waits_for_response_backoff_on_http_errors_before_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    events: list[tuple[str, int | float]] = []
+
+    def urlopen(request: Any) -> BytesIO:
+        events.append(("request", 1))
+        if len(events) == 1:
+            body = gzip.compress(json.dumps({"delay": 3}).encode())
+            raise HTTPError(
+                request.full_url, 503, "unavailable", {"Content-Encoding": "gzip"}, BytesIO(body)
+            )
+        return _json_response({"items": [{"id": 1}]})
+
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "sleep", lambda delay: events.append(("sleep", delay)))
+    result = (
+        RestConnector(
+            rest_config(
+                schema={"id": "int64"},
+                request={"response_backoff_field": "delay", "retries": 1, "backoff_seconds": 1},
+            )
+        )
+        .read()
+        .read_all()
+    )
+
+    assert result.to_pylist() == [{"id": 1}]
+    assert events == [("request", 1), ("sleep", 3), ("sleep", 1), ("request", 1)]
+
+
+def test_rejects_uninspectable_http_error_backoff_without_retrying(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    attempts: list[int] = []
+
+    def urlopen(request: Any) -> BytesIO:
+        attempts.append(1)
+        raise HTTPError(request.full_url, 503, "unavailable", {}, BytesIO(b"not-json"))
+
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    with pytest.raises(ValueError, match="Cannot inspect response backoff in HTTP 503 response"):
+        RestConnector(rest_config(request={"response_backoff_field": "delay", "retries": 1})).read()
+    assert attempts == [1]
+
+
+def test_waits_for_response_backoff_before_reporting_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+) -> None:
+    delays: list[float] = []
+
+    def urlopen(request: Any) -> BytesIO:
+        raise HTTPError(request.full_url, 400, "bad request", {}, _json_response({"delay": 4}))
+
+    monkeypatch.setattr(rest, "urlopen", urlopen)
+    monkeypatch.setattr(rest, "sleep", delays.append)
+    with pytest.raises(HTTPError, match="HTTP Error 400"):
+        RestConnector(rest_config(request={"response_backoff_field": "delay"})).read()
+    assert delays == [4]
+
+
+@pytest.mark.parametrize("value", [None, True, -1, "2", float("inf"), float("nan")])
+def test_rejects_invalid_response_backoff(
+    rest_config: Callable[..., dict[str, Any]],
+    mock_json_response: Callable[[dict[str, Any]], None],
+    value: Any,
+) -> None:
+    mock_json_response({"items": [{"id": 1}], "delay": value})
+    with pytest.raises(ValueError, match="Response backoff field 'delay' must be"):
+        RestConnector(
+            rest_config(schema={"id": "int64"}, request={"response_backoff_field": "delay"})
+        ).read()
+
+
+def test_response_backoff_is_optional_and_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    rest_config: Callable[..., dict[str, Any]],
+    mock_json_response: Callable[[dict[str, Any]], None],
+) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr(rest, "sleep", delays.append)
+    mock_json_response({"items": [{"id": 1}]})
+    RestConnector(
+        rest_config(schema={"id": "int64"}, request={"response_backoff_field": "delay"})
+    ).read()
+    mock_json_response({"items": [{"id": 1}], "delay": "ignored"})
+    RestConnector(rest_config(schema={"id": "int64"})).read()
+
+    assert delays == []
 
 
 def test_retries_transport_failures(

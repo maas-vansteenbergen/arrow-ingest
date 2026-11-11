@@ -1,0 +1,31 @@
+connector:
+  type: rest
+  url: https://api.stackexchange.com/2.3/questions
+  records_path: items
+  schema:
+    question_id: int64
+    creation_date: int64
+    link: string
+  params:
+    site: stackoverflow
+    sort: creation
+    order: asc
+    pagesize: "30"
+  headers:
+    Accept-Encoding: gzip
+  cursor:
+    type: high_watermark
+    field: creation_date
+    request_param: min
+  request:
+    timeout_seconds: 30
+    response_backoff_field: backoff
+
+merge:
+  strategy: upsert
+  keys: [question_id]
+
+target:
+  type: duckdb
+  path: ../output/questions.duckdb
+  table: questions

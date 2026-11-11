@@ -117,7 +117,8 @@ for the recommended layout and
 starting point.
 
 The same [product ingestion example](./examples/product-ingestion/) also
-includes static Parquet snapshots and SCD2 history loading.
+includes static Parquet snapshots and SCD2 history loading. For a cursor
+example, see [Stack Overflow ingestion](./examples/stackoverflow/).
 
 ## Project status
 
