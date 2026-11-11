@@ -14,6 +14,9 @@ product-ingestion/
 └── output/
 ```
 
+Run the following commands from the `examples/product-ingestion` directory,
+with `arrow-ingest` installed in your Python environment.
+
 ## Run a REST-to-DuckDB load
 
 The `products.yaml` file reads a REST JSON collection and writes a local

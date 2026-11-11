@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import gzip
 import json
+import math
 import os
+import zlib
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from time import sleep
@@ -37,6 +40,7 @@ class _RequestControls:
     timeout_seconds: float | None
     retries: int
     backoff_seconds: float
+    response_backoff_field: str | None
 
 
 @dataclass(frozen=True)
@@ -198,9 +202,19 @@ def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, An
                     request,
                     timeout=controls.timeout_seconds,
                 )
-            with response:
-                return json.load(response)
+            payload = _read_json_response(response)
+            _wait_for_response_backoff(payload, controls.response_backoff_field)
+            return payload
         except HTTPError as error:
+            if controls.response_backoff_field is not None and error.fp is not None:
+                try:
+                    payload = _read_json_response(error)
+                except (ValueError, OSError, EOFError, zlib.error) as response_error:
+                    raise ValueError(
+                        f"Cannot inspect response backoff in HTTP {error.code} response: "
+                        f"{response_error}"
+                    ) from error
+                _wait_for_response_backoff(payload, controls.response_backoff_field)
             if error.code != 429 and not 500 <= error.code < 600:
                 raise
             if attempt == controls.retries:
@@ -214,6 +228,40 @@ def _fetch_payload(request_configuration: _RequestConfiguration) -> dict[str, An
             sleep(delay)
 
     raise AssertionError("Request retry loop exhausted unexpectedly.")
+
+
+def _read_json_response(response: Any) -> dict[str, Any]:
+    with response:
+        body = response.read()
+        headers = getattr(response, "headers", None) or {}
+        encoding = headers.get("Content-Encoding", "").strip().casefold()
+    if not encoding and body.startswith(b"\x1f\x8b"):
+        encoding = "gzip"
+    if encoding == "gzip":
+        body = gzip.decompress(body)
+    elif encoding == "deflate":
+        body = zlib.decompress(body)
+    elif encoding not in ("", "identity"):
+        raise ValueError(f"Unsupported HTTP Content-Encoding: {encoding!r}.")
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise ValueError("REST response must be a JSON object.")
+    return payload
+
+
+def _wait_for_response_backoff(payload: dict[str, Any], field: str | None) -> None:
+    if field is None or field not in payload:
+        return
+    delay = payload[field]
+    if (
+        not isinstance(delay, (int, float))
+        or isinstance(delay, bool)
+        or delay < 0
+        or (isinstance(delay, float) and not math.isfinite(delay))
+    ):
+        raise ValueError(f"Response backoff field {field!r} must be a non-negative finite number.")
+    if delay:
+        sleep(delay)
 
 
 def _records(
@@ -404,6 +452,7 @@ def _request_controls(request: Any) -> _RequestControls:
             timeout_seconds=None,
             retries=0,
             backoff_seconds=0,
+            response_backoff_field=None,
         )
     if not isinstance(request, Mapping):
         raise ValueError("connector.request must be a mapping.")
@@ -428,10 +477,17 @@ def _request_controls(request: Any) -> _RequestControls:
     ):
         raise ValueError("connector.request.backoff_seconds must be a non-negative number.")
 
+    response_backoff_field = request.get("response_backoff_field")
+    if response_backoff_field is not None and (
+        not isinstance(response_backoff_field, str) or not response_backoff_field
+    ):
+        raise ValueError("connector.request.response_backoff_field must be a non-empty string.")
+
     return _RequestControls(
         timeout_seconds=float(timeout_seconds) if timeout_seconds is not None else None,
         retries=retries,
         backoff_seconds=float(backoff_seconds),
+        response_backoff_field=response_backoff_field,
     )
 
 

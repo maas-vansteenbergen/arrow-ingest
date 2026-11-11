@@ -129,10 +129,36 @@ connector:
 | `connector.request.timeout_seconds` | No | No timeout | A positive number of seconds. |
 | `connector.request.retries` | No | `0` | A non-negative integer. |
 | `connector.request.backoff_seconds` | No | `0` | A non-negative number of seconds. |
+| `connector.request.response_backoff_field` | No | No response delay | A top-level JSON field containing a non-negative number of seconds. |
 
 The connector retries transport failures and HTTP `429` and `5xx` responses.
 It doesn't retry configuration errors, invalid response shapes, or other HTTP
 responses.
+
+The REST connector accepts gzip- and deflate-encoded HTTP responses. Configure
+an `Accept-Encoding` header when the API requires one.
+
+### Wait for a response-provided delay
+
+Some APIs include a delay in their JSON responses. To wait for that delay,
+set `response_backoff_field` to the non-empty name of the top-level field:
+
+```yaml
+connector:
+  request:
+    response_backoff_field: backoff
+```
+
+The field must contain a non-negative finite number of seconds. The connector
+waits after reading the response, even when it contains no records. If the
+field is absent, the connector doesn't wait. This delay is separate from the
+retry delay configured by `backoff_seconds`.
+
+The connector also checks HTTP error response bodies for the field. If it can't
+read an error body as a JSON object, it fails without retrying.
+
+The connector doesn't persist delays or coordinate them across processes. If
+the API requires a shared delay, coordinate concurrent requests separately.
 
 ## Parquet connector
 

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import gzip
+import json
+from io import BytesIO
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from arrow_ingest.connectors import ParquetConnector, RestConnector
+from arrow_ingest.connectors import ParquetConnector, RestConnector, rest
 from arrow_ingest.core import MergeStrategy
 from arrow_ingest.runner import (
     _connector_from_config,
@@ -134,3 +138,49 @@ def test_rejects_malformed_yaml_configuration(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="Pipeline configuration is not valid YAML."):
         run_pipeline(configuration)
+
+
+def test_runs_rest_yaml_with_compression_and_response_backoff(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configuration = tmp_path / "pipeline.yaml"
+    configuration.write_text(
+        """
+connector:
+  type: rest
+  url: https://example.test/items
+  records_path: items
+  schema:
+    id: int64
+  headers:
+    Accept-Encoding: gzip
+  request:
+    timeout_seconds: 1
+    response_backoff_field: delay
+merge: append
+target:
+  type: parquet
+  path: output.parquet
+""".lstrip(),
+        encoding="utf-8",
+    )
+    delays: list[float] = []
+
+    class Response(BytesIO):
+        headers = {"Content-Encoding": "gzip"}
+
+    def fake_urlopen(request, timeout: float) -> Response:
+        assert timeout == 1
+        assert request.get_header("Accept-encoding") == "gzip"
+        return Response(gzip.compress(json.dumps({"items": [{"id": 1}], "delay": 2}).encode()))
+
+    monkeypatch.setattr(rest, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rest, "sleep", delays.append)
+
+    from arrow_ingest import run_pipeline
+
+    result = run_pipeline(configuration)
+
+    assert delays == [2]
+    assert result.rows_written == 1
+    assert pq.read_table(tmp_path / "output.parquet").to_pylist() == [{"id": 1}]
