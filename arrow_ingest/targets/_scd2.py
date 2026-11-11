@@ -23,6 +23,11 @@ def apply_scd2(
     _validate_source_schema(schema, keys, configuration)
     connection.execute("CREATE TEMP TABLE arrow_ingest_input AS SELECT * FROM arrow_ingest_stream")
     validate_incoming_keys(connection, "arrow_ingest_input", keys)
+    if connection.execute(
+        "SELECT 1 FROM arrow_ingest_input "
+        f"WHERE {quoted_identifier(configuration.effective_at)} IS NULL LIMIT 1"
+    ).fetchone():
+        raise ValueError("Incoming SCD2 effective_at values must not be null.")
     row_count = duckdb_row_count(connection, "arrow_ingest_input")
 
     if not table_exists(connection, destination):
@@ -107,6 +112,12 @@ def _validate_current_rows(
     keys: Sequence[str],
     configuration: SCD2Configuration,
 ) -> None:
+    if connection.execute(
+        f"SELECT 1 FROM {current} "
+        f"WHERE {quoted_identifier(configuration.valid_from)} IS NULL LIMIT 1"
+    ).fetchone():
+        raise ValueError("Current SCD2 rows must have a non-null valid_from value.")
+
     if connection.execute(
         f"SELECT 1 FROM {current} "
         f"WHERE {quoted_identifier(configuration.valid_to)} IS NOT NULL LIMIT 1"

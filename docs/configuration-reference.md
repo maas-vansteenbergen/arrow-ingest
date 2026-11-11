@@ -52,7 +52,8 @@ connector:
 
 With the `strict` schema policy, every declared field must be present and have
 its declared type. Null values are valid. Fields that aren't in the declared
-schema are ignored.
+schema are ignored. The connector decodes each JSON response before it forms
+Arrow batches.
 
 ### Authenticate with a bearer token
 
@@ -90,9 +91,18 @@ connector:
 | `connector.cursor.request_param` | Yes | The non-empty query-parameter name that the API expects. |
 
 Use a high-watermark cursor with `append`, `upsert`, or `scd2`. It doesn't work
-with `replace`. On the first load, the connector doesn't add the cursor query
-parameter. On later loads, the target supplies the maximum stored value for the
-field.
+with `replace`. When the destination has no cursor value, the connector doesn't
+add the cursor query parameter. Otherwise, the target supplies the maximum
+stored value for the field.
+
+The API defines how it interprets that parameter. Make sure its boundary,
+ordering, and update behavior match your data: a maximum stored value doesn't
+by itself account for ties, late-arriving records, or updates below that value.
+With SCD2, unchanged tracked fields don't create a new destination row, so an
+incoming cursor value might not be retained and can be requested again.
+
+The connector derives cursor state from destination data. It doesn't persist
+opaque source checkpoints.
 
 ### Paginate with offsets
 
@@ -113,6 +123,9 @@ connector:
 | `connector.pagination.limit_param` | Yes | The non-empty name of the page-size query parameter. |
 | `connector.pagination.page_size` | Yes | A positive integer. |
 | `connector.pagination.total_path` | Yes | A dot-separated path that resolves to a non-negative integer in every response. |
+
+Offset pagination is the only supported pagination mode. Changes to the source
+while pages are being read can affect which records the API returns.
 
 ### Control requests
 
@@ -192,6 +205,10 @@ target:
 | `target.type` | Yes | Set to `parquet`. |
 | `target.path` | Yes | A non-empty local output path, including the output filename. |
 
+The target writes to a temporary file and replaces the destination after the
+write succeeds. Append rewrites the existing file along with the incoming
+data.
+
 ### DuckDB target
 
 ```yaml
@@ -206,6 +223,8 @@ target:
 | `target.type` | Yes | Set to `duckdb`. |
 | `target.path` | Yes | A non-empty database path. You can use `:memory:`. |
 | `target.table` | Yes | An unqualified identifier matching `[A-Za-z_][A-Za-z0-9_]*`. |
+
+DuckDB upsert and SCD2 updates use transactions.
 
 Both targets support destination-derived high-watermark cursors when the
 destination field is `int64`.
@@ -239,7 +258,10 @@ merge:
 ```
 
 `keys` must be a non-empty list of unique field names. Incoming key values must
-be non-null and unique. The incoming and destination schemas must match.
+be non-null and unique within a load; the target doesn't select a winner for
+duplicate keys. The incoming and destination schemas must match. Upsert retains
+destination rows that aren't present in the incoming data; it doesn't
+synchronize deletions or evolve the destination schema.
 
 ### SCD2
 
@@ -270,8 +292,24 @@ merge:
 non-empty field names. The scalar merge form supports only `replace` and
 `append`; use the mapping form for `upsert` and `scd2`.
 
+Incoming key values must be non-null and unique within a load, so a load can't
+contain multiple versions of the same key. Incoming `effective_at` values and
+current rows' `valid_from` values must be non-null. For an existing current
+key, the incoming `effective_at` value must be greater than the current
+version's `valid_from` value. The target doesn't repair out-of-order versions.
+
+When a tracked field changes, SCD2 closes the current row at the incoming
+effective value and creates a new current row. When tracked fields don't
+change, it doesn't create a new version. The configured output fields must not
+already exist in the incoming schema.
+
+SCD2 doesn't support timestamp effective values, schema evolution, or
+deletion and tombstone synchronization. Rows absent from a load remain in the
+destination.
+
 ## Resolve configuration errors
 
-The documented settings are validated before data loads. When a pipeline fails
-validation, use the field named in the error to correct the value or
-cross-field combination. Don't rely on implicit type conversion.
+Configuration errors can be reported during setup or while a load runs. Source
+records, incoming schemas, and destination state are validated when they are
+available. Use the field or component named in an error to correct the
+configuration or data. Don't rely on implicit type conversion.
