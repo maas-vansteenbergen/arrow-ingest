@@ -14,8 +14,7 @@ uv sync --dev
 Run the sample ingestion pipeline with:
 
 ```console
-cd examples/product-ingestion
-uv run arrow-ingest run pipelines/products-scd2-initial.yaml
+uv run arrow-ingest run pipeline.yaml
 ```
 
 ## Development workflow
