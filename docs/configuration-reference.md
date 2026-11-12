@@ -1,8 +1,8 @@
 # YAML configuration reference
 
 Use this reference after you create a basic pipeline. For a concise example,
-see the [README](../README.md). For a runnable REST-to-DuckDB configuration,
-see the [product-ingestion pipeline](../examples/product-ingestion/pipelines/products.yaml).
+see the [README](../README.md). For a runnable REST-to-Parquet configuration,
+see [`pipeline.yaml`](../pipeline.yaml).
 
 ## Pipeline structure
 
