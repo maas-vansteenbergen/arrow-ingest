@@ -2,7 +2,7 @@
 
 Use this reference after you create a basic pipeline. For a concise example,
 see the [README](../README.md). For a runnable REST-to-Parquet configuration,
-see [`pipeline.yaml`](../pipeline.yaml).
+see the [REST-to-Parquet pipeline](../examples/rest-to-parquet/pipeline.yaml).
 
 ## Pipeline structure
 
