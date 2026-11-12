@@ -14,6 +14,7 @@ uv sync --dev
 Run the sample ingestion pipeline with:
 
 ```console
+cd examples/rest-to-parquet
 uv run arrow-ingest run pipeline.yaml
 ```
 

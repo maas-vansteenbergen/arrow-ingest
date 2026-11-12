@@ -48,16 +48,17 @@ Install Python 3.12 or later, then synchronize the development dependencies:
 uv sync --dev
 ```
 
-## Run the sample pipeline
+## Run a sample pipeline
 
-Run the included configuration:
+Run the REST-to-Parquet example:
 
 ```console
+cd examples/rest-to-parquet
 uv run arrow-ingest run pipeline.yaml
 ```
 
-[pipeline.yaml](./pipeline.yaml) reads a paginated product API and writes a
-Parquet file.
+The [REST-to-Parquet pipeline](./examples/rest-to-parquet/pipeline.yaml)
+reads a paginated product API and writes a Parquet file.
 
 ## Configure a pipeline
 
@@ -78,7 +79,7 @@ target:
 ```
 
 For a complete runnable REST-to-Parquet example, see
-[pipeline.yaml](./pipeline.yaml).
+[the REST-to-Parquet pipeline](./examples/rest-to-parquet/pipeline.yaml).
 
 Use the REST connector for JSON APIs and the Parquet connector for local
 Parquet files. Use the Parquet target for one output file or the DuckDB target

@@ -16,7 +16,47 @@ from arrow_ingest import run_pipeline
 from arrow_ingest.connectors import rest
 
 PRODUCT_INGESTION_EXAMPLE_DIRECTORY = Path(__file__).parents[1] / "examples" / "product-ingestion"
+REST_TO_PARQUET_EXAMPLE_DIRECTORY = Path(__file__).parents[1] / "examples" / "rest-to-parquet"
 STACKOVERFLOW_EXAMPLE_DIRECTORY = Path(__file__).parents[1] / "examples" / "stackoverflow"
+
+
+def test_rest_to_parquet_example_paginates_and_writes_parquet(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_directory = tmp_path / "rest-to-parquet"
+    shutil.copytree(REST_TO_PARQUET_EXAMPLE_DIRECTORY, project_directory)
+    requests: list[dict[str, list[str]]] = []
+
+    def fake_urlopen(request: Request, timeout: float) -> BytesIO:
+        assert timeout == 30
+        parameters = parse_qs(urlsplit(request.full_url).query)
+        requests.append(parameters)
+        offset = int(parameters["skip"][0])
+        records = [
+            {
+                "id": identifier,
+                "title": f"Product {identifier}",
+                "price": float(identifier),
+                "category": "examples",
+                "stock": identifier,
+            }
+            for identifier in range(offset + 1, min(offset + 10, 11) + 1)
+        ]
+        return BytesIO(json.dumps({"products": records, "total": 11}).encode())
+
+    monkeypatch.setattr(rest, "urlopen", fake_urlopen)
+
+    result = run_pipeline(project_directory / "pipeline.yaml")
+
+    products = pq.read_table(project_directory / "output" / "products.parquet")
+
+    assert result.rows_written == 11
+    assert requests == [
+        {"skip": ["0"], "limit": ["10"]},
+        {"skip": ["10"], "limit": ["10"]},
+    ]
+    assert products.column("id").to_pylist() == list(range(1, 12))
 
 
 def test_rest_example_writes_to_duckdb(
