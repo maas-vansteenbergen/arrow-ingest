@@ -48,16 +48,18 @@ Install Python 3.12 or later, then synchronize the development dependencies:
 uv sync --dev
 ```
 
-## Run the sample pipeline
+## Run a sample pipeline
 
-Run the included configuration:
+Run the self-contained product-ingestion example:
 
 ```console
-uv run arrow-ingest run pipeline.yaml
+cd examples/product-ingestion
+uv run arrow-ingest run pipelines/products-scd2-initial.yaml
 ```
 
-[pipeline.yaml](./pipeline.yaml) reads a paginated product API and writes a
-Parquet file.
+The [initial SCD2 pipeline](./examples/product-ingestion/pipelines/products-scd2-initial.yaml)
+reads the included product snapshot and writes product history to
+`examples/product-ingestion/output/products-history.parquet`.
 
 ## Configure a pipeline
 
@@ -77,8 +79,8 @@ target:
   path: ./output/products.parquet
 ```
 
-For a complete runnable REST-to-Parquet example, see
-[pipeline.yaml](./pipeline.yaml).
+For a complete runnable REST-to-DuckDB example, see the
+[product-ingestion pipeline](./examples/product-ingestion/pipelines/products.yaml).
 
 Use the REST connector for JSON APIs and the Parquet connector for local
 Parquet files. Use the Parquet target for one output file or the DuckDB target
