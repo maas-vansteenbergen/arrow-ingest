@@ -1,0 +1,10 @@
+connector:
+  type: parquet
+  path: ../data/products-v1.parquet
+
+merge:
+  strategy: append
+
+target:
+  type: parquet
+  path: ../output/products-append.parquet

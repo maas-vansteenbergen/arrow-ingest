@@ -6,6 +6,7 @@ This example shows a small `arrow-ingest` project:
 product-ingestion/
 ├── pipelines/
 │   ├── products.yaml
+│   ├── products-append.yaml
 │   ├── products-scd2-initial.yaml
 │   └── products-scd2-update.yaml
 ├── data/
@@ -28,6 +29,20 @@ arrow-ingest run pipelines/products.yaml
 
 Its database path resolves to `output/products.duckdb` relative to the
 configuration file. It writes the `products` table.
+
+## Append a Parquet snapshot
+
+The `products-append.yaml` file reads the first static product snapshot and
+appends it to a Parquet file:
+
+```console
+arrow-ingest run pipelines/products-append.yaml
+```
+
+Run the command again to append the same two records a second time. The
+pipeline writes four records to `output/products-append.parquet`. Append
+retains every incoming record; it doesn't remove duplicates from repeated
+loads.
 
 ## Load SCD2 history
 

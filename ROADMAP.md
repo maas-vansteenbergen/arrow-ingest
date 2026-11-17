@@ -38,7 +38,7 @@ project evolves.
 
 - Task-oriented guides
   - [x] Add a configuration example for a first successful Parquet load.
-  - [ ] Add an append merge configuration example.
+  - [x] Add an append merge configuration example.
   - [x] Add an upsert merge configuration example.
   - [x] Add an SCD2 merge configuration example with static Parquet snapshots.
 
