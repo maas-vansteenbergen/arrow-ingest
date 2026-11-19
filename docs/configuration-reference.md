@@ -339,7 +339,6 @@ target:
 The connector type `csv` isn't supported. For a Parquet source, use
 `type: parquet` and provide its path, as shown in the
 [pipeline structure example](#invalid-yaml-or-pipeline-structure).
-Changing the type doesn't convert a CSV file to Parquet.
 
 Check the connector, target, and merge sections above for supported values.
 
