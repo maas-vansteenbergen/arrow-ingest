@@ -100,6 +100,25 @@ def test_rest_example_writes_to_duckdb(
     assert rows == [(1, "Widget", 10.0, "tools", 5)]
 
 
+def test_append_example_retains_records_from_repeated_loads(tmp_path) -> None:
+    project_directory = tmp_path / "product-ingestion"
+    shutil.copytree(
+        PRODUCT_INGESTION_EXAMPLE_DIRECTORY,
+        project_directory,
+        ignore=shutil.ignore_patterns("output"),
+    )
+    pipeline = project_directory / "pipelines" / "products-append.yaml"
+
+    first_result = run_pipeline(pipeline)
+    second_result = run_pipeline(pipeline)
+
+    products = pq.read_table(project_directory / "output" / "products-append.parquet")
+
+    assert first_result.rows_written == 2
+    assert second_result.rows_written == 2
+    assert products.column("id").to_pylist() == [1, 2, 1, 2]
+
+
 def test_stackoverflow_example_resumes_from_destination_watermark(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
