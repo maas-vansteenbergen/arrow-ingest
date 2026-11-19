@@ -311,5 +311,79 @@ destination.
 
 Configuration errors can be reported during setup or while a load runs. Source
 records, incoming schemas, and destination state are validated when they are
-available. Use the field or component named in an error to correct the
-configuration or data. Don't rely on implicit type conversion.
+available, so valid YAML alone doesn't guarantee a successful load. Use the
+field or component named in an error to correct the configuration or data.
+Don't rely on implicit type conversion.
+
+The following examples show corrected configurations. Replace the example paths
+and URL with values for your source and destination.
+
+### Invalid YAML or pipeline structure
+
+An unclosed sequence such as `connector: [` isn't valid YAML. A pipeline also
+needs `connector`, `merge`, and `target` fields; `connector` and `target` must
+be mappings. Check the indentation and provide the required fields:
+
+```yaml
+connector:
+  type: parquet
+  path: ./input/products.parquet
+merge: replace
+target:
+  type: parquet
+  path: ./output/products.parquet
+```
+
+### Unsupported connector type
+
+The connector type `csv` isn't supported. For a Parquet source, use
+`type: parquet` and provide its path, as shown in the
+[pipeline structure example](#invalid-yaml-or-pipeline-structure).
+
+Check the connector, target, and merge sections above for supported values.
+
+### Missing upsert keys
+
+`merge: upsert` doesn't specify the keys needed to match rows. Use a mapping
+with a non-empty `keys` list, and choose a field present in the source:
+
+```yaml
+connector:
+  type: parquet
+  path: ./input/products.parquet
+merge:
+  strategy: upsert
+  keys: [id]
+target:
+  type: parquet
+  path: ./output/products.parquet
+```
+
+SCD2 also requires a mapping with its own settings; see
+[SCD2](#scd2).
+
+### Incompatible cursor configuration
+
+A high-watermark cursor can't be used with `merge: replace`, and its field
+must be declared as `int64` in the REST schema. Use an incremental merge and
+declare the cursor field:
+
+```yaml
+connector:
+  type: rest
+  url: https://api.example.com/products
+  records_path: products
+  schema:
+    id: int64
+  cursor:
+    type: high_watermark
+    field: id
+    request_param: after_id
+merge: append
+target:
+  type: parquet
+  path: ./output/products.parquet
+```
+
+Make sure the API's cursor behavior is compatible with your load. See
+[Load incrementally](#load-incrementally) for the assumptions to consider.

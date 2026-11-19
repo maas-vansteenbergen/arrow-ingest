@@ -58,7 +58,13 @@ uv run arrow-ingest run pipeline.yaml
 ```
 
 The [REST-to-Parquet pipeline](./examples/rest-to-parquet/pipeline.yaml)
-reads a paginated product API and writes a Parquet file.
+reads a paginated product API and writes `output/products.parquet`. It requires
+an internet connection. If the configuration fails, see
+[Resolve configuration errors](./docs/configuration-reference.md#resolve-configuration-errors).
+
+After your first load, [create your own project](./docs/project-structure.md)
+and use the [configuration reference](./docs/configuration-reference.md) to
+choose its source, target, and merge settings.
 
 ## Configure a pipeline
 
@@ -97,7 +103,8 @@ destination-derived high-watermark cursor to a REST connector. See the
 [YAML configuration reference](./docs/configuration-reference.md) for all
 supported fields, defaults, validation rules, and complete examples.
 
-Run a pipeline from Python when you integrate it into an orchestration task:
+Run a YAML configuration from Python when you integrate it into an
+orchestration task:
 
 ```python
 from arrow_ingest import run_pipeline
@@ -106,8 +113,20 @@ result = run_pipeline("pipelines/products.yaml")
 print(result.rows_written)
 ```
 
-The function returns a `LoadResult` with the number of written rows, the
-incoming column count, and the resolved destination path.
+Pass the YAML file's path as a string or `pathlib.Path`. A relative configuration
+path is resolved from the current working directory. Local source and target
+paths in the YAML are resolved relative to the YAML file.
+
+On success, the function returns a `LoadResult` with `rows_written`,
+`column_count`, and `destination`. The row count represents incoming rows
+processed; for SCD2, it includes unchanged rows that don't create a new
+version. The column count is for the incoming schema, and the destination is
+the resolved target path (or `:memory:` for an in-memory DuckDB target).
+
+Failures propagate as exceptions rather than returning a result. For example,
+invalid configuration can raise `ValueError`, and file access can raise
+`OSError`. Source and target operations can raise other exceptions; handle them
+in the calling application or orchestration system.
 
 ## Organize a project
 

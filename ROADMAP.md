@@ -43,10 +43,11 @@ project evolves.
   - [x] Add an SCD2 merge configuration example with static Parquet snapshots.
 
 - Actionable user experience
-  - [ ] Document common YAML validation failures, their causes, and their
+  - [x] Document common YAML validation failures, their causes, and their
     resolutions.
-  - [ ] Document how YAML configuration maps to the equivalent Python API.
-  - [ ] Add a concise onboarding path that links a first successful load to
+  - [x] Document how to run YAML configurations from Python, including results
+    and failures.
+  - [x] Add a concise onboarding path that links a first successful load to
     reference and troubleshooting material.
 
 - Behavior-first configuration workflow
